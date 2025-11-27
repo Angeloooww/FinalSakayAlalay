@@ -1,0 +1,30 @@
+{
+  "project_info": {
+    "project_number": "663335957604",
+    "firebase_url": "https://sakayalalay-497dc-default-rtdb.firebaseio.com",
+    "project_id": "sakayalalay-497dc",
+    "storage_bucket": "sakayalalay-497dc.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:663335957604:android:ffb760db8c87b43669db71",
+        "android_client_info": {
+          "package_name": "com.example.sakayalalay"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA3O0hu2jWPYAHagIf5uGwdIm8JgO851H0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
