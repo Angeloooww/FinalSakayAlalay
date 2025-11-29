@@ -5,8 +5,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
-
-// ✅ FIREBASE
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -30,10 +28,9 @@ class _MapsPageState extends State<PAOHomePage> {
   void initState() {
     super.initState();
     _mapController = MapController();
-    startPaoLiveTracking(); // ✅ LIVE GPS + FIRESTORE
+    startPaoLiveTracking();
   }
 
-  // ✅ LIVE LOCATION STREAM → FIRESTORE
   void startPaoLiveTracking() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) return;
@@ -61,7 +58,6 @@ class _MapsPageState extends State<PAOHomePage> {
 
       _mapController.move(newLocation, 17);
 
-      // ✅ SEND TO FIRESTORE
       await FirebaseFirestore.instance
           .collection("pao_locations")
           .doc(user.uid)
@@ -75,7 +71,6 @@ class _MapsPageState extends State<PAOHomePage> {
     });
   }
 
-  // ✅ SET PAO OFFLINE
   @override
   void dispose() {
     User? user = FirebaseAuth.instance.currentUser;
@@ -88,7 +83,6 @@ class _MapsPageState extends State<PAOHomePage> {
     super.dispose();
   }
 
-  // ✅ PLACE SEARCH
   Future<void> searchPlace(String query) async {
     final url = Uri.parse(
       "https://nominatim.openstreetmap.org/search"
@@ -116,11 +110,87 @@ class _MapsPageState extends State<PAOHomePage> {
     }
   }
 
+  // ✅ LOGOUT FUNCTION
+  Future<void> _handleLogout() async {
+  final shouldLogout = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Logout'),
+      content: const Text('Are you sure you want to logout?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(context, true),
+          style: TextButton.styleFrom(
+            foregroundColor: Colors.red,
+          ),
+          child: const Text('Logout'),
+        ),
+      ],
+    ),
+  );
+
+  if (shouldLogout != true) return;
+
+  try {
+    // Set PAO offline before logging out
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      try {
+        await FirebaseFirestore.instance
+            .collection("pao_locations")
+            .doc(user.uid)
+            .set({
+          "isOnline": false,
+          "updatedAt": FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } catch (e) {
+        print("Failed to set offline status: $e");
+      }
+    }
+
+    // Sign out
+    await FirebaseAuth.instance.signOut();
+
+    // ✅ FIX: Wait for auth state to update, then let AuthWrapper handle navigation
+    if (mounted) {
+      // Pop all routes and go back to root
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      
+      // Don't manually navigate - let AuthWrapper detect the logout
+      // The StreamBuilder will automatically show LoginPage
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Logout failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("PAO Map")),
-
+      appBar: AppBar(
+        title: const Text("PAO Map"),
+        backgroundColor: const Color(0xFF0D47A1),
+        foregroundColor: Colors.white,
+        actions: [
+          // ✅ LOGOUT BUTTON IN APP BAR
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Logout',
+            onPressed: _handleLogout,
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           if (isLoadingLocation)
@@ -129,17 +199,14 @@ class _MapsPageState extends State<PAOHomePage> {
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
-                initialCenter:
-                    paoLocation ?? LatLng(10.708365, 122.563966),
+                initialCenter: paoLocation ?? LatLng(10.708365, 122.563966),
                 initialZoom: 16,
               ),
               children: [
                 TileLayer(
-                  urlTemplate:
-                      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                   userAgentPackageName: "com.example.sakayalalay",
                 ),
-
                 MarkerLayer(
                   markers: [
                     if (paoLocation != null)
@@ -153,7 +220,6 @@ class _MapsPageState extends State<PAOHomePage> {
                           color: Colors.blue,
                         ),
                       ),
-
                     if (searchedLocation != null)
                       Marker(
                         point: searchedLocation!,
@@ -169,7 +235,6 @@ class _MapsPageState extends State<PAOHomePage> {
                 ),
               ],
             ),
-
           Positioned(
             top: 20,
             left: 20,
@@ -197,7 +262,6 @@ class _MapsPageState extends State<PAOHomePage> {
           ),
         ],
       ),
-
       bottomNavigationBar: PAOBotoomNav(currentIndex: 2),
     );
   }
