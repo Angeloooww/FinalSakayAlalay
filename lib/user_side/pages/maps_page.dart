@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
+import 'package:geolocator/geolocator.dart';
 
 import '../navigation/nav_bar.dart';
 
@@ -16,36 +17,59 @@ class MapsPage extends StatefulWidget {
 class _MapsPageState extends State<MapsPage> {
   late final MapController _mapController;
 
-  LatLng? searchedLocation; // NEW: will hold search result
+  LatLng? userLocation; // ✅ REAL USER LOCATION
+  bool isLoadingLocation = true; // ✅ LOADING STATE
+
+  LatLng? searchedLocation;
 
   final TextEditingController _searchController = TextEditingController();
-
-  late final LatLng userLocation = LatLng(10.708365, 122.563966);
-
-  final List<LatLng> jeepneyLocations = const [
-    LatLng(10.708985, 122.562500),
-    LatLng(10.708100, 122.565100),
-    LatLng(10.709300, 122.566900),
-  ];
 
   @override
   void initState() {
     _mapController = MapController();
+    getUserLiveLocation(); // ✅ GET REAL USER GPS
     super.initState();
   }
 
+  // ---------------------------------------------------------
+  // ✅ GET REAL USER LOCATION FROM DEVICE GPS
+  // ---------------------------------------------------------
+  Future<void> getUserLiveLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      setState(() => isLoadingLocation = false);
+      return;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    final position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+
+    setState(() {
+      userLocation = LatLng(position.latitude, position.longitude);
+      isLoadingLocation = false;
+    });
+
+    _mapController.move(userLocation!, 17);
+  }
+
   /// ---------------------------------------------------------
-  /// SEARCH USING OPENSTREETMAP NOMINATIM (FREE)
+  /// SEARCH USING OPENSTREETMAP NOMINATIM
   /// ---------------------------------------------------------
   Future<void> searchPlace(String query) async {
     final url = Uri.parse(
       "https://nominatim.openstreetmap.org/search"
       "?q=$query, Iloilo City"
-      "&format=json&limit=1"
+      "&format=json&limit=1",
     );
 
     final response = await http.get(url, headers: {
-      "User-Agent": "sakay-alalay-app"
+      "User-Agent": "sakay-alalay-app",
     });
 
     if (response.statusCode == 200) {
@@ -59,7 +83,6 @@ class _MapsPageState extends State<MapsPage> {
           searchedLocation = LatLng(lat, lon);
         });
 
-        // MOVE MAP
         _mapController.move(searchedLocation!, 17);
       }
     }
@@ -72,42 +95,63 @@ class _MapsPageState extends State<MapsPage> {
 
       body: Stack(
         children: [
-          FlutterMap(
-            mapController: _mapController,
-            options: MapOptions(
-              initialCenter: userLocation,
-              initialZoom: 16,
-            ),
-            children: [
-              TileLayer(
-                urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                userAgentPackageName: "com.example.sakayalalay",
+          // ---------------------------------------------------
+          // ✅ SHOW LOADING WHILE FETCHING USER LOCATION
+          // ---------------------------------------------------
+          if (isLoadingLocation)
+            const Center(child: CircularProgressIndicator())
+          else
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: userLocation ??
+                    LatLng(10.708365, 122.563966), // fallback
+                initialZoom: 16,
               ),
+              children: [
+                TileLayer(
+                  urlTemplate:
+                      "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+                  userAgentPackageName: "com.example.sakayalalay",
+                ),
 
-              // -------------------------------------------
-              // ALL MARKERS (user, jeep, search result)
-              // -------------------------------------------
-              MarkerLayer(
-                markers: [
-                 // SEARCH RESULT MARKER (OPTIONAL)
-                  if (searchedLocation != null)
-                    Marker(
-                      point: searchedLocation!,
-                      width: 50,
-                      height: 50,
-                      child: const Icon(
-                        Icons.location_on,
-                        size: 45,
-                        color: Colors.red,
+                // -------------------------------------------
+                // ✅ MARKERS: USER (PERSON ICON) + SEARCH
+                // -------------------------------------------
+                MarkerLayer(
+                  markers: [
+                    // ✅ REAL USER LOCATION (PERSON ICON)
+                    if (userLocation != null)
+                      Marker(
+                        point: userLocation!,
+                        width: 60,
+                        height: 60,
+                        child: const Icon(
+                          Icons.person_pin_circle, // ✅ PERSON ICON
+                          size: 50,
+                          color: Colors.green, // USER COLOR
+                        ),
                       ),
-                    ),
-                ],
-              ),
-            ],
-          ),
+
+                    // ✅ SEARCH RESULT MARKER
+                    if (searchedLocation != null)
+                      Marker(
+                        point: searchedLocation!,
+                        width: 50,
+                        height: 50,
+                        child: const Icon(
+                          Icons.location_on,
+                          size: 45,
+                          color: Colors.red,
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
 
           // ---------------------------------------------------
-          // SEARCH BAR (NOW WORKING)
+          // ✅ SEARCH BAR
           // ---------------------------------------------------
           Positioned(
             top: 20,
