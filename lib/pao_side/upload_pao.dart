@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../user_side/services/firebase_services.dart';
-import '../main.dart';
 
 class PaoIdUploadScreen extends StatefulWidget {
   final String userId;

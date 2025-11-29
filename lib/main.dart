@@ -11,7 +11,6 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'user_side/firebase_options.dart';
 import 'user_side/services/firebase_services.dart';
 import 'user_side/upload.dart';
-import 'pao_side/upload_pao.dart';
 
 bool isRegistering = false;
 
