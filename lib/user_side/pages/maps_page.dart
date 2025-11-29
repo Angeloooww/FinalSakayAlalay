@@ -283,6 +283,8 @@ class _MapsPageState extends State<MapsPage> {
     return Scaffold(
       appBar: AppBar(
         title: const Text("User Map"),
+        backgroundColor: const Color(0xFF2B5F9E),
+        foregroundColor: Colors.white,
         actions: [
           if (searchedLocation != null)
             IconButton(
