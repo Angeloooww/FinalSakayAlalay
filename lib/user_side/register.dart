@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'upload.dart';
 import 'services/firebase_services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../main.dart';
 
 class UserDataScreen extends StatefulWidget {
   const UserDataScreen({super.key});
@@ -39,107 +41,212 @@ class _UserDataScreenState extends State<UserDataScreen> {
   ];
 
   Future<void> _handleRegistration() async {
-  if (_formKey.currentState!.validate()) {
+    if (!_formKey.currentState!.validate()) return;
+
     if (!_agreeToTerms) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please agree to the Terms and Conditions'),
           backgroundColor: Colors.red,
-          duration: Duration(seconds: 2),
         ),
       );
       return;
     }
 
-    setState(() {
-      _isLoading = true;
-    });
+    if (_selectedDisability == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select your disability type'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    isRegistering = true;
 
     try {
-      // 1. Register user with Firebase Auth
-      final userCredential = await _firebaseService.registerUser(
-        emailController.text.trim(),
-        passwordController.text,
+      print('🔐 Creating Firebase Auth account...');
+
+      // ✅ 1. CREATE FIREBASE AUTH USER
+      final userCredential = await FirebaseAuth.instance
+          .createUserWithEmailAndPassword(
+        email: emailController.text.trim(),
+        password: passwordController.text.trim(),
       );
 
-      // 2. Prepare user data (matching your Firestore structure)
-      final userData = {
+      final String userId = userCredential.user!.uid;
+      print('✅ Firebase Auth UID: $userId');
+
+      // ✅ 2. WAIT FOR AUTH TO FULLY PROPAGATE
+      await Future.delayed(const Duration(milliseconds: 500));
+
+      // ✅ 3. BUILD USER DATA
+      final Map<String, dynamic> userData = {
         'firstName': firstNameController.text.trim(),
         'middleName': middleNameController.text.trim(),
         'lastName': lastNameController.text.trim(),
         'contactNum': contactController.text.trim(),
         'email': emailController.text.trim(),
         'disabilityType': _selectedDisability,
-        'createdAt': FieldValue.serverTimestamp(), // Use server timestamp
-        'userId': userCredential.user!.uid,
-        // DO NOT store passwords in Firestore - security risk!
+        'userId': userId,
+        'emailVerified': false,
+        'accountStatus': 'pending',
+        'createdAt': FieldValue.serverTimestamp(),
       };
 
-      // 3. Save to Firestore
-      await _firebaseService.saveUserDataToFirestore(
-        userCredential.user!.uid,
-        userData,
-      );
+      // ✅ 4. USE BATCH WRITE FOR ATOMIC OPERATION
+      final batch = FirebaseFirestore.instance.batch();
+      
+      // Reference to pwd_users document
+      final pwdUserRef = FirebaseFirestore.instance
+          .collection('pwd_users')
+          .doc(userId);
+      
+      // Reference to users document
+      final userRef = FirebaseFirestore.instance
+          .collection('users')
+          .doc(userId);
 
-      // 4. Show success message
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Account created successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-
-      // 5. Navigate to next screen
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => PwdCardUploadScreen(
-              userId: userCredential.user!.uid,
-              userData: userData,
-            ),
-          ),
-        );
-      }
-
-    } catch (e) {
-      setState(() {
-        _isLoading = false;
+      // Add both writes to batch
+      batch.set(pwdUserRef, userData);
+      batch.set(userRef, {
+        'role': 'pwd',
+        'email': emailController.text.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
       });
 
-      String errorMessage = 'Registration failed';
+      // ✅ 5. COMMIT BATCH (ATOMIC OPERATION)
+      print('💾 Saving user data with batch write...');
+      await batch.commit();
+      print('✅ User data saved successfully');
+
+      // ✅ 6. FORCE AUTH REFRESH
+      await FirebaseAuth.instance.currentUser?.reload();
+
+      if (!mounted) return;
+
+      // ✅ 7. SUCCESS MESSAGE
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Account created successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 2),
+        ),
+      );
+
+      // ✅ 8. WAIT A BIT BEFORE NAVIGATION
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      // ✅ 9. GO TO UPLOAD SCREEN
+      if (!mounted) return;
       
-      if (e.toString().contains('email-already-in-use')) {
-        errorMessage = 'This email is already registered';
-      } else if (e.toString().contains('weak-password')) {
-        errorMessage = 'Password is too weak (minimum 6 characters)';
-      } else if (e.toString().contains('invalid-email')) {
-        errorMessage = 'Invalid email address';
-      } else if (e.toString().contains('network-request-failed')) {
-        errorMessage = 'Network error. Please check your connection';
-      } else {
-        errorMessage = 'Registration failed: ${e.toString()}';
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PwdCardUploadScreen(
+            userId: userId,
+            userData: userData,
+          ),
+        ),
+      );
+    }
+
+    // ✅ HANDLE AUTH ERRORS
+    on FirebaseAuthException catch (e) {
+      print('❌ FirebaseAuth error: ${e.code}');
+      String message = 'Registration failed';
+
+      switch (e.code) {
+        case 'email-already-in-use':
+          message = 'This email is already registered';
+          break;
+        case 'weak-password':
+          message = 'Password must be at least 6 characters';
+          break;
+        case 'invalid-email':
+          message = 'Invalid email address';
+          break;
+        case 'operation-not-allowed':
+          message = 'Email/password accounts are not enabled';
+          break;
+        case 'network-request-failed':
+          message = 'Network error. Please check your connection';
+          break;
+        default:
+          message = 'Registration failed: ${e.message}';
       }
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(errorMessage),
+            content: Text(message),
             backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
+            duration: const Duration(seconds: 4),
           ),
         );
       }
     }
+
+    // ✅ HANDLE FIRESTORE PERMISSION ERRORS
+    on FirebaseException catch (e) {
+      print('❌ Firestore error: ${e.code} - ${e.message}');
+      
+      if (e.code == 'permission-denied') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Permission denied. Please check Firestore security rules.',
+              ),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 5),
+            ),
+          );
+        }
+        
+        // Clean up the auth user since we couldn't create the profile
+        try {
+          await FirebaseAuth.instance.currentUser?.delete();
+          print('🗑️ Cleaned up auth user due to permission error');
+        } catch (deleteError) {
+          print('⚠️ Could not delete auth user: $deleteError');
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Database error: ${e.message}'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 4),
+            ),
+          );
+        }
+      }
+    }
+
+    // ✅ HANDLE ANY OTHER ERRORS
+    catch (e) {
+      print('❌ Unexpected error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Unexpected error: $e'),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    }
+
+    finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+      isRegistering = false;
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -278,7 +385,7 @@ class _UserDataScreenState extends State<UserDataScreen> {
                                 _buildLabel('TYPE OF DISABILITY'),
                                 const SizedBox(height: 5),
                                 DropdownButtonFormField<String>(
-                                  initialValue: _selectedDisability,
+                                  value: _selectedDisability,
                                   decoration: InputDecoration(
                                     border: OutlineInputBorder(
                                       borderRadius: BorderRadius.circular(6),

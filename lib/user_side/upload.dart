@@ -3,7 +3,9 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'services/firebase_services.dart';
+import '../main.dart'; // Import for LoginPage
 
 class PwdCardUploadScreen extends StatefulWidget {
   final String userId;
@@ -30,28 +32,25 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
   bool _uploadComplete = false;
   double _uploadProgress = 0.0;
 
-  // Pick image from gallery
   Future<void> _pickImageFromGallery() async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 800,  // Smaller size for Base64
+        maxWidth: 800,
         maxHeight: 800,
-        imageQuality: 60, // Lower quality for smaller file size
+        imageQuality: 60,
       );
 
       if (pickedFile != null) {
         _pickedFile = pickedFile;
         
         if (kIsWeb) {
-          // For web: read as bytes
           final bytes = await pickedFile.readAsBytes();
           setState(() {
             _webImage = bytes;
             _uploadComplete = false;
           });
         } else {
-          // For Android/iOS: use File
           setState(() {
             _selectedImage = File(pickedFile.path);
             _uploadComplete = false;
@@ -63,29 +62,26 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
     }
   }
 
-  // Pick image from camera
   Future<void> _pickImageFromCamera() async {
     try {
       final XFile? pickedFile = await _picker.pickImage(
         source: ImageSource.camera,
-        maxWidth: 800,  // Smaller size for Base64
+        maxWidth: 800,
         maxHeight: 800,
-        imageQuality: 60, // Lower quality for smaller file size
-        preferredCameraDevice: CameraDevice.rear, // Use rear camera by default
+        imageQuality: 60,
+        preferredCameraDevice: CameraDevice.rear,
       );
 
       if (pickedFile != null) {
         _pickedFile = pickedFile;
         
         if (kIsWeb) {
-          // For web: read as bytes
           final bytes = await pickedFile.readAsBytes();
           setState(() {
             _webImage = bytes;
             _uploadComplete = false;
           });
         } else {
-          // For Android/iOS: use File
           setState(() {
             _selectedImage = File(pickedFile.path);
             _uploadComplete = false;
@@ -97,7 +93,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
     }
   }
 
-  // Show image source selection bottom sheet
   Future<void> _showImageSourceSelection() async {
     showModalBottomSheet(
       context: context,
@@ -133,7 +128,7 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                     _pickImageFromGallery();
                   },
                 ),
-                if (!kIsWeb) // Camera available on Android/iOS
+                if (!kIsWeb)
                   ListTile(
                     leading: const Icon(
                       Icons.camera_alt,
@@ -154,7 +149,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
     );
   }
 
-  // Upload PWD card to Firestore as Base64 (NO Firebase Storage needed)
   Future<void> _uploadPwdCard() async {
     if (_selectedImage == null && _webImage == null) {
       _showErrorSnackBar('Please select an image first');
@@ -167,7 +161,7 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
     });
 
     try {
-      print('🚀 Starting upload process...');
+      print('🚀 Starting PWD Card upload...');
       print('User ID: ${widget.userId}');
       print('Platform: ${kIsWeb ? "Web" : "Mobile"}');
       
@@ -182,24 +176,21 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
       }
 
       if (kIsWeb) {
-        print('📤 Uploading from Web...');
-        // Upload from web using bytes (Base64)
+        print('📤 Uploading PWD Card from Web...');
         await _firebaseService.uploadPwdCardBase64Web(
           _webImage!,
           widget.userId,
         );
       } else {
-        print('📤 Uploading from Mobile...');
-        // Upload from Android/iOS using File (Base64)
+        print('📤 Uploading PWD Card from Mobile...');
         await _firebaseService.uploadPwdCardBase64(
           _selectedImage!,
           widget.userId,
         );
       }
 
-      print('✅ Upload completed successfully!');
+      print('✅ PWD Card upload completed successfully!');
 
-      // Complete progress
       if (mounted) {
         setState(() {
           _uploadProgress = 1.0;
@@ -207,33 +198,35 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
         });
       }
 
-      // Show success message
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('PWD Card uploaded successfully!'),
+            content: Text('PWD Card uploaded successfully! Please log in.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
         );
 
-        // Wait a moment then navigate to home or next screen
         await Future.delayed(const Duration(seconds: 2));
         
         if (mounted) {
-          // Navigate back to home/login screen
-          Navigator.of(context).pushNamedAndRemoveUntil(
-            '/', // This typically goes to your main/home route
-            (route) => false, // Remove all previous routes
-          );
+          // Sign out the user so they can log in fresh
+          print('🔐 Signing out user...');
+          await FirebaseAuth.instance.signOut();
           
-          // OR if you have a specific home route:
-          // Navigator.of(context).pushReplacementNamed('/login');
+          // Navigate to login page
+          print('🔄 Navigating to login page...');
+          Navigator.of(context).pushAndRemoveUntil(
+            MaterialPageRoute(
+              builder: (context) => const LoginPage(),
+            ),
+            (route) => false,
+          );
         }
       }
 
     } catch (e) {
-      print('❌ Upload failed with error: $e');
+      print('❌ PWD Card upload failed: $e');
       if (mounted) {
         _showErrorSnackBar('Upload failed: ${e.toString()}');
       }
@@ -246,7 +239,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
     }
   }
 
-  // Skip upload (optional)
   void _skipUpload() {
     showDialog(
       context: context,
@@ -261,10 +253,13 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context); // Close dialog
-              Navigator.of(context).pushNamedAndRemoveUntil(
-                '/', // Go to home/login
+            onPressed: () async {
+              Navigator.pop(context);
+              await FirebaseAuth.instance.signOut();
+              Navigator.of(context).pushAndRemoveUntil(
+                MaterialPageRoute(
+                  builder: (context) => const LoginPage(),
+                ),
                 (route) => false,
               );
             },
@@ -313,7 +308,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // App Logo
                     Image.asset(
                       'assets/images/removed.png',
                       width: 200,
@@ -325,7 +319,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                     ),
                     const SizedBox(height: 30),
 
-                    // Main Card Container
                     Container(
                       constraints: const BoxConstraints(maxWidth: 500),
                       decoration: BoxDecoration(
@@ -342,7 +335,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                       padding: const EdgeInsets.all(30),
                       child: Column(
                         children: [
-                          // Title
                           const Text(
                             'UPLOAD PWD CARD',
                             style: TextStyle(
@@ -354,7 +346,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                           ),
                           const SizedBox(height: 10),
                           
-                          // Subtitle
                           Text(
                             'Please upload a clear photo of your PWD ID card',
                             textAlign: TextAlign.center,
@@ -365,7 +356,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                           ),
                           const SizedBox(height: 30),
 
-                          // Image Preview or Placeholder
                           GestureDetector(
                             onTap: _isUploading ? null : _showImageSourceSelection,
                             child: Container(
@@ -387,7 +377,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                           
                           const SizedBox(height: 20),
 
-                          // Change Image Button (if image selected)
                           if ((_selectedImage != null || _webImage != null) && !_isUploading)
                             TextButton.icon(
                               onPressed: _showImageSourceSelection,
@@ -400,7 +389,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
 
                           const SizedBox(height: 20),
 
-                          // Upload Progress
                           if (_isUploading)
                             Column(
                               children: [
@@ -423,7 +411,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                               ],
                             ),
 
-                          // Upload Button
                           SizedBox(
                             width: double.infinity,
                             height: 48,
@@ -486,7 +473,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
                           
                           const SizedBox(height: 15),
 
-                          // Skip Button
                           TextButton(
                             onPressed: _isUploading ? null : _skipUpload,
                             child: Text(
@@ -510,10 +496,8 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
     );
   }
 
-  // Helper method to build image preview based on platform
   Widget _buildImagePreview() {
     if (kIsWeb && _webImage != null) {
-      // Web: use Image.memory
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Image.memory(
@@ -537,7 +521,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
         ),
       );
     } else if (!kIsWeb && _selectedImage != null) {
-      // Android/iOS: use Image.file
       return ClipRRect(
         borderRadius: BorderRadius.circular(10),
         child: Image.file(
@@ -561,7 +544,6 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
         ),
       );
     } else {
-      // No image selected - show placeholder
       return Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
