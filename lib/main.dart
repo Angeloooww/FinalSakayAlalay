@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:finalsakay/user_side/pages/home.dart';
-import 'package:finalsakay/pao_side/pao_home.dart';
+import 'package:finalsakay/pao_side/pages/pao_home.dart';
 import 'user_side/register.dart';
 import 'pao_side/register_pao.dart';
 import 'pao_side/upload_pao.dart';
