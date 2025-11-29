@@ -126,11 +126,9 @@ class AuthWrapper extends StatelessWidget {
       print('✅ Full user data found');
       print('📋 User data keys: ${fullData?.keys.toList()}');
       
-      // ✅ FIXED: More lenient check for uploaded ID
       final idFieldName = role == 'pwd' ? 'pwdCardBase64' : 'paoIdBase64';
       final idValue = fullData?[idFieldName];
       
-      // Check if the field exists and has actual content
       bool hasUploadedId = false;
       if (idValue != null) {
         if (idValue is String) {
@@ -168,6 +166,7 @@ class AuthWrapper extends StatelessWidget {
       builder: (context, snapshot) {
         print('🟢 Connection state: ${snapshot.connectionState}');
         print('🟢 Has data: ${snapshot.hasData}');
+        print('🟢 User: ${snapshot.data?.email ?? "NO USER"}'); // ← ADD THIS
         
         if (snapshot.hasError) {
           print('❌ AuthWrapper error: ${snapshot.error}');
@@ -234,141 +233,143 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        if (snapshot.hasData && snapshot.data != null) {
-          final user = snapshot.data!;
-          print('✅ User logged in: ${user.email}');
-          print('✅ Email verified: ${user.emailVerified}');
-          
-          // Fetch user data and check if profile is complete
-          return FutureBuilder<Map<String, dynamic>>(
-            future: _getUserData(user.uid),
-            builder: (context, dataSnapshot) {
-              if (dataSnapshot.connectionState == ConnectionState.waiting) {
-                return const Scaffold(
-                  body: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        CircularProgressIndicator(),
-                        SizedBox(height: 16),
-                        Text('Verifying account...'),
-                      ],
-                    ),
+        // ✅ CRITICAL: Check if user is null (logged out)
+        if (!snapshot.hasData || snapshot.data == null) {
+          print('✅ No user logged in, showing login page');
+          return const LoginPage();
+        }
+
+        // User is logged in
+        final user = snapshot.data!;
+        print('✅ User logged in: ${user.email}');
+        print('✅ Email verified: ${user.emailVerified}');
+        
+        // Fetch user data and check if profile is complete
+        return FutureBuilder<Map<String, dynamic>>(
+          future: _getUserData(user.uid),
+          builder: (context, dataSnapshot) {
+            if (dataSnapshot.connectionState == ConnectionState.waiting) {
+              return const Scaffold(
+                body: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('Verifying account...'),
+                    ],
                   ),
-                );
-              }
+                ),
+              );
+            }
 
-              final userData = dataSnapshot.data ?? {};
-              final role = userData['role'];
-              final hasData = userData['hasData'] == true;
-              final hasUploadedId = userData['hasUploadedId'] == true;
+            final userData = dataSnapshot.data ?? {};
+            final role = userData['role'];
+            final hasData = userData['hasData'] == true;
+            final hasUploadedId = userData['hasUploadedId'] == true;
 
-              print('✅ User role: $role');
-              print('✅ Has data: $hasData');
-              print('✅ Has uploaded ID: $hasUploadedId');
+            print('✅ User role: $role');
+            print('✅ Has data: $hasData');
+            print('✅ Has uploaded ID: $hasUploadedId');
 
-              // ✅ FIX: If user doesn't have profile data at all, sign out
-              if (!hasData) {
-                print('⚠️ No profile data found - signing out');
-                
-                // Schedule sign out for next frame to avoid issues
-                WidgetsBinding.instance.addPostFrameCallback((_) async {
-                  await FirebaseAuth.instance.signOut();
-                });
-                
-                return Scaffold(
-                  body: Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, 
-                          size: 60, 
-                          color: Colors.orange,
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'Profile Not Found',
-                          style: TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 40),
-                          child: Text(
-                            'Please register an account first.',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.pushAndRemoveUntil(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => const LoginPage(),
-                              ),
-                              (route) => false,
-                            );
-                          },
-                          child: const Text('Go to Login'),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }
-
-              // ✅ FIX: User has profile but no ID uploaded - redirect to upload
-              if (hasData && !hasUploadedId) {
-                print('⚠️ User has profile but no ID uploaded - redirecting to upload');
-                
-                // Don't sign them out - just redirect to upload screen
-                if (role == 'pwd') {
-                  print('🔄 Redirecting to PWD ID upload');
-                  return PwdCardUploadScreen(
-                    userId: user.uid,
-                    userData: userData['data'] as Map<String, dynamic>,
-                  );
-                } else if (role == 'pao') {
-                  print('🔄 Redirecting to PAO ID upload');
-                  return PaoIdUploadScreen(
-                    userId: user.uid,
-                    userData: userData['data'] as Map<String, dynamic>,
-                  );
-                }
-              }
-
-              // ✅ User has complete profile with uploaded ID - go to home
-              if (hasData && hasUploadedId) {
-                print('✅ User has complete profile - redirecting to home');
-                if (role == 'pao') {
-                  print('🔄 Redirecting to PAO Home');
-                  return PAOHomePage();
-                } else if (role == 'pwd') {
-                  print('🔄 Redirecting to PWD User Home');
-                  return HomePage();
-                }
-              }
-
-              // ✅ Unknown state - sign out
-              print('⚠️ Unknown state - signing out');
+            // ✅ FIX: If user doesn't have profile data at all, sign out
+            if (!hasData) {
+              print('⚠️ No profile data found - signing out');
+              
+              // Schedule sign out for next frame to avoid issues
               WidgetsBinding.instance.addPostFrameCallback((_) async {
                 await FirebaseAuth.instance.signOut();
               });
               
-              return const Scaffold(
+              return Scaffold(
                 body: Center(
-                  child: CircularProgressIndicator(),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, 
+                        size: 60, 
+                        color: Colors.orange,
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Profile Not Found',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 40),
+                        child: Text(
+                          'Please register an account first.',
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () {
+                          Navigator.pushAndRemoveUntil(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const LoginPage(),
+                            ),
+                            (route) => false,
+                          );
+                        },
+                        child: const Text('Go to Login'),
+                      ),
+                    ],
+                  ),
                 ),
               );
-            },
-          );
-        }
+            }
 
-        print('✅ No user, showing login page');
-        return const LoginPage();
+            // ✅ FIX: User has profile but no ID uploaded - redirect to upload
+            if (hasData && !hasUploadedId) {
+              print('⚠️ User has profile but no ID uploaded - redirecting to upload');
+              
+              // Don't sign them out - just redirect to upload screen
+              if (role == 'pwd') {
+                print('🔄 Redirecting to PWD ID upload');
+                return PwdCardUploadScreen(
+                  userId: user.uid,
+                  userData: userData['data'] as Map<String, dynamic>,
+                );
+              } else if (role == 'pao') {
+                print('🔄 Redirecting to PAO ID upload');
+                return PaoIdUploadScreen(
+                  userId: user.uid,
+                  userData: userData['data'] as Map<String, dynamic>,
+                );
+              }
+            }
+
+            // ✅ User has complete profile with uploaded ID - go to home
+            if (hasData && hasUploadedId) {
+              print('✅ User has complete profile - redirecting to home');
+              if (role == 'pao') {
+                print('🔄 Redirecting to PAO Home');
+                return PAOHomePage();
+              } else if (role == 'pwd') {
+                print('🔄 Redirecting to PWD User Home');
+                return HomePage();
+              }
+            }
+
+            // ✅ Unknown state - sign out
+            print('⚠️ Unknown state - signing out');
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              await FirebaseAuth.instance.signOut();
+            });
+            
+            return const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(),
+              ),
+            );
+          },
+        );
       },
     );
   }

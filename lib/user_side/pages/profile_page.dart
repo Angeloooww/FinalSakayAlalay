@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../services/firebase_services.dart';
 import '../navigation/nav_bar.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:finalsakay/main.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -55,6 +57,86 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  Future<void> _handleLogout() async {
+  print('🔴 _handleLogout called');
+  
+  try {
+    // Show confirmation dialog
+    final shouldLogout = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) {
+        print('🔴 Dialog building');
+        return AlertDialog(
+          title: const Text('Logout'),
+          content: const Text('Are you sure you want to logout?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                print('🔴 Cancel pressed');
+                Navigator.pop(context, false);
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                print('🔴 Logout confirmed');
+                Navigator.pop(context, true);
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+              ),
+              child: const Text('Logout'),
+            ),
+          ],
+        );
+      },
+    );
+
+    print('🔴 Dialog result: $shouldLogout');
+
+    if (shouldLogout != true) {
+      print('🔴 Logout cancelled');
+      return;
+    }
+
+    print('🔴 Signing out...');
+    await FirebaseAuth.instance.signOut();
+    print('🔴 Signed out successfully');
+
+    // ✅ NEW FIX: Force complete navigation reset
+    if (mounted) {
+      print('🔴 Forcing navigation reset...');
+      
+      // Get the navigator
+      final navigator = Navigator.of(context);
+      
+      // Remove ALL routes
+      navigator.popUntil((route) => false);
+      
+      // Push LoginPage as the new root
+      navigator.push(
+        MaterialPageRoute(
+          builder: (context) => const LoginPage(),
+        ),
+      );
+      
+      print('🔴 Navigation complete');
+    }
+  } catch (e, stackTrace) {
+    print('🔴 Error during logout: $e');
+    print('🔴 Stack trace: $stackTrace');
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Logout failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+}
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,6 +147,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
         title: const Text('My Profile'),
         centerTitle: true,
+        backgroundColor: const Color(0xFF2B5F9E),
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.settings),
@@ -187,15 +271,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 title: 'Clear history',
                                 onTap: () {},
                               ),
+                              // ✅ FIXED LOGOUT BUTTON
                               _buildMenuItem(
                                 icon: Icons.logout,
                                 title: 'Logout',
-                                onTap: () async {
-                                  await _firebaseService.signOut();
-                                  if (mounted) {
-                                    Navigator.of(context).pushReplacementNamed('/login');
-                                  }
+                                onTap: () {
+                                  print('🔴 Logout button tapped!');
+                                  _handleLogout();
                                 },
+                                isDestructive: true,
                               ),
                               const SizedBox(height: 32),
                               
@@ -226,7 +310,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
-      bottomNavigationBar: BottomNav(currentIndex: 4), // Assuming profile is at index 4
+      bottomNavigationBar: BottomNav(currentIndex: 4),
     );
   }
 
@@ -234,10 +318,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
     required IconData icon,
     required String title,
     required VoidCallback onTap,
+    bool isDestructive = false,
   }) {
     return ListTile(
-      leading: Icon(icon, color: Colors.grey[700]),
-      title: Text(title),
+      leading: Icon(
+        icon, 
+        color: isDestructive ? Colors.red : Colors.grey[700],
+      ),
+      title: Text(
+        title,
+        style: TextStyle(
+          color: isDestructive ? Colors.red : null,
+        ),
+      ),
       trailing: const Icon(Icons.chevron_right),
       onTap: onTap,
     );
