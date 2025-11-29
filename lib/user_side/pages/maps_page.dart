@@ -5,6 +5,9 @@ import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 
+// ✅ FIREBASE
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../navigation/nav_bar.dart';
 
 class MapsPage extends StatefulWidget {
@@ -17,23 +20,20 @@ class MapsPage extends StatefulWidget {
 class _MapsPageState extends State<MapsPage> {
   late final MapController _mapController;
 
-  LatLng? userLocation; // ✅ REAL USER LOCATION
-  bool isLoadingLocation = true; // ✅ LOADING STATE
+  LatLng? userLocation;
+  bool isLoadingLocation = true;
 
   LatLng? searchedLocation;
-
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
     _mapController = MapController();
-    getUserLiveLocation(); // ✅ GET REAL USER GPS
+    getUserLiveLocation(); // ✅ USER GPS
     super.initState();
   }
 
-  // ---------------------------------------------------------
-  // ✅ GET REAL USER LOCATION FROM DEVICE GPS
-  // ---------------------------------------------------------
+  // ✅ GET USER GPS
   Future<void> getUserLiveLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
@@ -58,9 +58,31 @@ class _MapsPageState extends State<MapsPage> {
     _mapController.move(userLocation!, 17);
   }
 
-  /// ---------------------------------------------------------
-  /// SEARCH USING OPENSTREETMAP NOMINATIM
-  /// ---------------------------------------------------------
+  // ✅ LIVE PAO MARKERS
+  Stream<List<Marker>> getLivePaoMarkers() {
+    return FirebaseFirestore.instance
+        .collection("pao_locations")
+        .where("isOnline", isEqualTo: true)
+        .snapshots()
+        .map((snapshot) {
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+
+        return Marker(
+          point: LatLng(data["lat"], data["lng"]),
+          width: 50,
+          height: 50,
+          child: const Icon(
+            Icons.directions_bus,
+            size: 40,
+            color: Colors.blue,
+          ),
+        );
+      }).toList();
+    });
+  }
+
+  // ✅ SEARCH
   Future<void> searchPlace(String query) async {
     final url = Uri.parse(
       "https://nominatim.openstreetmap.org/search"
@@ -91,21 +113,18 @@ class _MapsPageState extends State<MapsPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Maps")),
+      appBar: AppBar(title: const Text("User Map")),
 
       body: Stack(
         children: [
-          // ---------------------------------------------------
-          // ✅ SHOW LOADING WHILE FETCHING USER LOCATION
-          // ---------------------------------------------------
           if (isLoadingLocation)
             const Center(child: CircularProgressIndicator())
           else
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
-                initialCenter: userLocation ??
-                    LatLng(10.708365, 122.563966), // fallback
+                initialCenter:
+                    userLocation ?? LatLng(10.708365, 122.563966),
                 initialZoom: 16,
               ),
               children: [
@@ -115,25 +134,21 @@ class _MapsPageState extends State<MapsPage> {
                   userAgentPackageName: "com.example.sakayalalay",
                 ),
 
-                // -------------------------------------------
-                // ✅ MARKERS: USER (PERSON ICON) + SEARCH
-                // -------------------------------------------
+                // ✅ USER + SEARCH MARKERS
                 MarkerLayer(
                   markers: [
-                    // ✅ REAL USER LOCATION (PERSON ICON)
                     if (userLocation != null)
                       Marker(
                         point: userLocation!,
                         width: 60,
                         height: 60,
                         child: const Icon(
-                          Icons.person_pin_circle, // ✅ PERSON ICON
+                          Icons.person_pin_circle,
                           size: 50,
-                          color: Colors.green, // USER COLOR
+                          color: Colors.green,
                         ),
                       ),
 
-                    // ✅ SEARCH RESULT MARKER
                     if (searchedLocation != null)
                       Marker(
                         point: searchedLocation!,
@@ -147,12 +162,18 @@ class _MapsPageState extends State<MapsPage> {
                       ),
                   ],
                 ),
+
+                // ✅ LIVE PAO MARKERS
+                StreamBuilder<List<Marker>>(
+                  stream: getLivePaoMarkers(),
+                  builder: (context, snapshot) {
+                    if (!snapshot.hasData) return const SizedBox();
+                    return MarkerLayer(markers: snapshot.data!);
+                  },
+                ),
               ],
             ),
 
-          // ---------------------------------------------------
-          // ✅ SEARCH BAR
-          // ---------------------------------------------------
           Positioned(
             top: 20,
             left: 20,
@@ -163,19 +184,12 @@ class _MapsPageState extends State<MapsPage> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(25),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 8,
-                  ),
-                ],
               ),
               child: TextField(
                 controller: _searchController,
                 decoration: const InputDecoration(
-                  hintText: "Search places in Iloilo City...",
+                  hintText: "Search places...",
                   border: InputBorder.none,
-                  suffixIcon: Icon(Icons.search),
                 ),
                 onSubmitted: (value) {
                   if (value.trim().isNotEmpty) {

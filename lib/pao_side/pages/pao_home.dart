@@ -6,6 +6,10 @@ import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 
+// ✅ FIREBASE
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 class PAOHomePage extends StatefulWidget {
   const PAOHomePage({super.key});
 
@@ -16,50 +20,75 @@ class PAOHomePage extends StatefulWidget {
 class _MapsPageState extends State<PAOHomePage> {
   late final MapController _mapController;
 
-  LatLng? paoLocation; // NEW: PAO REAL LOCATION
-  bool isLoadingLocation = true; // NEW
+  LatLng? paoLocation;
+  bool isLoadingLocation = true;
 
-  LatLng? searchedLocation; // Search result
-
+  LatLng? searchedLocation;
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void initState() {
-    _mapController = MapController();
-    getPaoLiveLocation(); // GET REAL GPS
     super.initState();
+    _mapController = MapController();
+    startPaoLiveTracking(); // ✅ LIVE GPS + FIRESTORE
   }
 
-  /// ---------------------------------------------------------
-  /// GET REAL PAO LOCATION FROM DEVICE GPS
-  /// ---------------------------------------------------------
-  Future<void> getPaoLiveLocation() async {
+  // ✅ LIVE LOCATION STREAM → FIRESTORE
+  void startPaoLiveTracking() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      setState(() => isLoadingLocation = false);
-      return;
-    }
+    if (!serviceEnabled) return;
 
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
 
-    final position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
 
-    setState(() {
-      paoLocation = LatLng(position.latitude, position.longitude);
-      isLoadingLocation = false;
+    Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.best,
+        distanceFilter: 5,
+      ),
+    ).listen((Position position) async {
+      LatLng newLocation = LatLng(position.latitude, position.longitude);
+
+      setState(() {
+        paoLocation = newLocation;
+        isLoadingLocation = false;
+      });
+
+      _mapController.move(newLocation, 17);
+
+      // ✅ SEND TO FIRESTORE
+      await FirebaseFirestore.instance
+          .collection("pao_locations")
+          .doc(user.uid)
+          .set({
+        "lat": position.latitude,
+        "lng": position.longitude,
+        "isOnline": true,
+        "updatedAt": FieldValue.serverTimestamp(),
+        "paoId": user.uid,
+      });
     });
-
-    _mapController.move(paoLocation!, 17);
   }
 
-  /// ---------------------------------------------------------
-  /// SEARCH USING OPENSTREETMAP NOMINATIM
-  /// ---------------------------------------------------------
+  // ✅ SET PAO OFFLINE
+  @override
+  void dispose() {
+    User? user = FirebaseAuth.instance.currentUser;
+    if (user != null) {
+      FirebaseFirestore.instance
+          .collection("pao_locations")
+          .doc(user.uid)
+          .update({"isOnline": false});
+    }
+    super.dispose();
+  }
+
+  // ✅ PLACE SEARCH
   Future<void> searchPlace(String query) async {
     final url = Uri.parse(
       "https://nominatim.openstreetmap.org/search"
@@ -90,21 +119,18 @@ class _MapsPageState extends State<PAOHomePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Maps")),
+      appBar: AppBar(title: const Text("PAO Map")),
 
       body: Stack(
         children: [
-          // ---------------------------------------------------
-          // SHOW LOADING WHILE FETCHING PAO LOCATION
-          // ---------------------------------------------------
           if (isLoadingLocation)
             const Center(child: CircularProgressIndicator())
           else
             FlutterMap(
               mapController: _mapController,
               options: MapOptions(
-                initialCenter: paoLocation ??
-                    LatLng(10.708365, 122.563966), // fallback
+                initialCenter:
+                    paoLocation ?? LatLng(10.708365, 122.563966),
                 initialZoom: 16,
               ),
               children: [
@@ -114,25 +140,20 @@ class _MapsPageState extends State<PAOHomePage> {
                   userAgentPackageName: "com.example.sakayalalay",
                 ),
 
-                // -------------------------------------------
-                // MARKERS: PAO + SEARCH RESULT
-                // -------------------------------------------
                 MarkerLayer(
                   markers: [
-                    // REAL PAO LOCATION MARKER
                     if (paoLocation != null)
                       Marker(
                         point: paoLocation!,
                         width: 50,
                         height: 50,
                         child: const Icon(
-                          Icons.my_location,
+                          Icons.directions_bus,
                           size: 45,
                           color: Colors.blue,
                         ),
                       ),
 
-                    // SEARCH RESULT MARKER
                     if (searchedLocation != null)
                       Marker(
                         point: searchedLocation!,
@@ -149,9 +170,6 @@ class _MapsPageState extends State<PAOHomePage> {
               ],
             ),
 
-          // ---------------------------------------------------
-          // SEARCH BAR
-          // ---------------------------------------------------
           Positioned(
             top: 20,
             left: 20,
@@ -162,19 +180,12 @@ class _MapsPageState extends State<PAOHomePage> {
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(25),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.15),
-                    blurRadius: 8,
-                  ),
-                ],
               ),
               child: TextField(
                 controller: _searchController,
                 decoration: const InputDecoration(
-                  hintText: "Search places in Iloilo City...",
+                  hintText: "Search places...",
                   border: InputBorder.none,
-                  suffixIcon: Icon(Icons.search),
                 ),
                 onSubmitted: (value) {
                   if (value.trim().isNotEmpty) {
