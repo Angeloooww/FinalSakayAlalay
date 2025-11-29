@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:http/http.dart' as http;
+
 import '../navigation/nav_bar.dart';
 
 class MapsPage extends StatefulWidget {
@@ -12,6 +15,10 @@ class MapsPage extends StatefulWidget {
 
 class _MapsPageState extends State<MapsPage> {
   late final MapController _mapController;
+
+  LatLng? searchedLocation; // NEW: will hold search result
+
+  final TextEditingController _searchController = TextEditingController();
 
   late final LatLng userLocation = LatLng(10.708365, 122.563966);
 
@@ -27,6 +34,37 @@ class _MapsPageState extends State<MapsPage> {
     super.initState();
   }
 
+  /// ---------------------------------------------------------
+  /// SEARCH USING OPENSTREETMAP NOMINATIM (FREE)
+  /// ---------------------------------------------------------
+  Future<void> searchPlace(String query) async {
+    final url = Uri.parse(
+      "https://nominatim.openstreetmap.org/search"
+      "?q=$query, Iloilo City"
+      "&format=json&limit=1"
+    );
+
+    final response = await http.get(url, headers: {
+      "User-Agent": "sakay-alalay-app"
+    });
+
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+
+      if (data.isNotEmpty) {
+        final double lat = double.parse(data[0]["lat"]);
+        final double lon = double.parse(data[0]["lon"]);
+
+        setState(() {
+          searchedLocation = LatLng(lat, lon);
+        });
+
+        // MOVE MAP
+        _mapController.move(searchedLocation!, 17);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -34,7 +72,6 @@ class _MapsPageState extends State<MapsPage> {
 
       body: Stack(
         children: [
-          /// OPENSTREETMAP VIEW (free, no API key)
           FlutterMap(
             mapController: _mapController,
             options: MapOptions(
@@ -42,46 +79,36 @@ class _MapsPageState extends State<MapsPage> {
               initialZoom: 16,
             ),
             children: [
-
-              /// TILE LAYER (OpenStreetMap)
               TileLayer(
                 urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                 userAgentPackageName: "com.example.sakayalalay",
               ),
 
-              /// MARKERS LAYER
+              // -------------------------------------------
+              // ALL MARKERS (user, jeep, search result)
+              // -------------------------------------------
               MarkerLayer(
                 markers: [
-
-                  /// USER MARKER
-                  Marker(
-                    point: userLocation,
-                    width: 50,
-                    height: 50,
-                    child: Image.asset(
-                      "assets/icons/user_marker.png",
-                      width: 48,
-                    ),
-                  ),
-
-                  /// JEEPNEY MARKERS
-                  ...jeepneyLocations.map(
-                    (pos) => Marker(
-                      point: pos,
+                 // SEARCH RESULT MARKER (OPTIONAL)
+                  if (searchedLocation != null)
+                    Marker(
+                      point: searchedLocation!,
                       width: 50,
                       height: 50,
-                      child: Image.asset(
-                        "assets/icons/jeep_marker.png",
-                        width: 48,
+                      child: const Icon(
+                        Icons.location_on,
+                        size: 45,
+                        color: Colors.red,
                       ),
                     ),
-                  ),
                 ],
               ),
             ],
           ),
 
-          /// SEARCH BAR OVERLAY — same UI as yours
+          // ---------------------------------------------------
+          // SEARCH BAR (NOW WORKING)
+          // ---------------------------------------------------
           Positioned(
             top: 20,
             left: 20,
@@ -99,19 +126,18 @@ class _MapsPageState extends State<MapsPage> {
                   ),
                 ],
               ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      "Robinson’s Main",
-                      style: TextStyle(
-                        fontSize: 16,
-                        color: Colors.grey[800],
-                      ),
-                    ),
-                  ),
-                  const Icon(Icons.mic, color: Colors.black54),
-                ],
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: "Search places in Iloilo City...",
+                  border: InputBorder.none,
+                  suffixIcon: Icon(Icons.search),
+                ),
+                onSubmitted: (value) {
+                  if (value.trim().isNotEmpty) {
+                    searchPlace(value.trim());
+                  }
+                },
               ),
             ),
           ),
