@@ -326,15 +326,64 @@ class _MapsPageState extends State<MapsPage> {
                 // ✅ USER + SEARCH MARKERS
                 MarkerLayer(
                   markers: [
+                    // ✅ USER LOCATION MARKER WITH GLOWING BLUE PIN
                     if (userLocation != null)
                       Marker(
                         point: userLocation!,
                         width: 60,
                         height: 60,
-                        child: const Icon(
-                          Icons.person_pin_circle,
-                          size: 50,
-                          color: Colors.green,
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Glowing effect layers
+                            Icon(
+                              Icons.location_on,
+                              size: 60,
+                              color: const Color(0xFF2B5F9E).withOpacity(0.3),
+                              shadows: [
+                                Shadow(
+                                  color: const Color(0xFF2B5F9E).withOpacity(0.8),
+                                  blurRadius: 20,
+                                ),
+                              ],
+                            ),
+                            Icon(
+                              Icons.location_on,
+                              size: 60,
+                              color: const Color(0xFF2B5F9E).withOpacity(0.5),
+                              shadows: [
+                                Shadow(
+                                  color: const Color(0xFF2B5F9E).withOpacity(0.6),
+                                  blurRadius: 12,
+                                ),
+                              ],
+                            ),
+                            // Main location pin
+                            Icon(
+                              Icons.location_on,
+                              size: 60,
+                              color: const Color(0xFF2B5F9E),
+                              shadows: [
+                                Shadow(
+                                  color: const Color(0xFF2B5F9E).withOpacity(0.9),
+                                  blurRadius: 8,
+                                ),
+                                Shadow(
+                                  color: Colors.white.withOpacity(0.5),
+                                  blurRadius: 4,
+                                ),
+                              ],
+                            ),
+                            // Transparent person icon (cut-out effect)
+                            const Positioned(
+                              top: 8,
+                              child: Icon(
+                                Icons.person,
+                                size: 28,
+                                color: Colors.transparent,
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                     if (searchedLocation != null)
