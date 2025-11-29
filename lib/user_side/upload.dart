@@ -1,11 +1,12 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:finalsakay/user_side/home.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'services/firebase_services.dart';
-import '../main.dart'; // Import for LoginPage
+import 'pages/home.dart';
 
 class PwdCardUploadScreen extends StatefulWidget {
   final String userId;
@@ -201,7 +202,7 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('PWD Card uploaded successfully! Please log in.'),
+            content: Text('PWD Card uploaded successfully!'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
@@ -210,15 +211,11 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
         await Future.delayed(const Duration(seconds: 2));
         
         if (mounted) {
-          // Sign out the user so they can log in fresh
-          print('🔐 Signing out user...');
-          await FirebaseAuth.instance.signOut();
-          
-          // Navigate to login page
-          print('🔄 Navigating to login page...');
+          // Navigate to HomePage - user is already authenticated
+          print('🏠 Navigating to home page...');
           Navigator.of(context).pushAndRemoveUntil(
             MaterialPageRoute(
-              builder: (context) => const LoginPage(),
+              builder: (context) => const HomePage(),
             ),
             (route) => false,
           );
@@ -253,12 +250,12 @@ class _PwdCardUploadScreenState extends State<PwdCardUploadScreen> {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () async {
+            onPressed: () {
               Navigator.pop(context);
-              await FirebaseAuth.instance.signOut();
+              // Navigate to HomePage instead of logging out
               Navigator.of(context).pushAndRemoveUntil(
                 MaterialPageRoute(
-                  builder: (context) => const LoginPage(),
+                  builder: (context) => HomePage(),
                 ),
                 (route) => false,
               );

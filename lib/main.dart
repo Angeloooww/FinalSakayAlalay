@@ -10,8 +10,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'user_side/firebase_options.dart';
 import 'user_side/services/firebase_services.dart';
-// import 'user_side/upload.dart';
-// import 'pao_side/upload_pao.dart';
+import 'user_side/upload.dart';
+import 'pao_side/upload_pao.dart';
 
 bool isRegistering = false;
 
@@ -127,10 +127,19 @@ class AuthWrapper extends StatelessWidget {
       print('✅ Full user data found');
       print('📋 User data keys: ${fullData?.keys.toList()}');
       
-      // Check if user has uploaded their ID
+      // ✅ FIXED: More lenient check for uploaded ID
       final idFieldName = role == 'pwd' ? 'pwdCardBase64' : 'paoIdBase64';
       final idValue = fullData?[idFieldName];
-      final hasUploadedId = idValue != null && idValue.toString().isNotEmpty;
+      
+      // Check if the field exists and has actual content
+      bool hasUploadedId = false;
+      if (idValue != null) {
+        if (idValue is String) {
+          hasUploadedId = idValue.trim().isNotEmpty;
+        } else {
+          hasUploadedId = idValue.toString().trim().isNotEmpty;
+        }
+      }
       
       print('🔍 Checking for $idFieldName...');
       print('✅ Has uploaded ID: $hasUploadedId');
@@ -173,13 +182,17 @@ class AuthWrapper extends StatelessWidget {
                   Text('Error: ${snapshot.error}'),
                   const SizedBox(height: 16),
                   ElevatedButton(
-                    onPressed: () {
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const LoginPage(),
-                        ),
-                      );
+                    onPressed: () async {
+                      await FirebaseAuth.instance.signOut();
+                      if (context.mounted) {
+                        Navigator.pushAndRemoveUntil(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const LoginPage(),
+                          ),
+                          (route) => false,
+                        );
+                      }
                     },
                     child: const Text('Go to Login'),
                   ),
@@ -205,12 +218,19 @@ class AuthWrapper extends StatelessWidget {
           );
         }
 
-        // If a registration is in progress, show a simple loading UI
+        // ✅ FIX: If registration is in progress, show loading
         if (isRegistering) {
           print('🟡 Registration in progress — AuthWrapper paused');
           return const Scaffold(
             body: Center(
-              child: CircularProgressIndicator(),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text('Creating your account...'),
+                ],
+              ),
             ),
           );
         }
@@ -248,85 +268,102 @@ class AuthWrapper extends StatelessWidget {
               print('✅ Has data: $hasData');
               print('✅ Has uploaded ID: $hasUploadedId');
 
-              // If user doesn't have complete data, and we are NOT registering, sign them out and send to login
-              if (!hasData || !hasUploadedId) {
-                print('⚠️ Incomplete profile detected');
-                // If registration is ongoing, just show a loading screen (handled earlier).
-                // If not registering, sign out and prompt to login/register.
-                if (!isRegistering) {
-                  print('⚠️ Signing out because profile is incomplete and not registering');
-                  // Don't await, let it happen in background
-                  FirebaseAuth.instance.signOut();
-                  
-                  return Scaffold(
-                    body: Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.warning_amber_rounded, 
-                            size: 60, 
-                            color: Colors.orange,
+              // ✅ FIX: If user doesn't have profile data at all, sign out
+              if (!hasData) {
+                print('⚠️ No profile data found - signing out');
+                
+                // Schedule sign out for next frame to avoid issues
+                WidgetsBinding.instance.addPostFrameCallback((_) async {
+                  await FirebaseAuth.instance.signOut();
+                });
+                
+                return Scaffold(
+                  body: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.warning_amber_rounded, 
+                          size: 60, 
+                          color: Colors.orange,
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Profile Not Found',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
                           ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            'Profile Incomplete',
-                            style: TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 40),
+                          child: Text(
+                            'Please register an account first.',
+                            textAlign: TextAlign.center,
                           ),
-                          const SizedBox(height: 8),
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 40),
-                            child: Text(
-                              'Please complete your registration and upload your ID.',
-                              textAlign: TextAlign.center,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          ElevatedButton(
-                            onPressed: () {
-                              Navigator.pushReplacement(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) => const LoginPage(),
-                                ),
-                              );
-                            },
-                            child: const Text('Go to Login'),
-                          ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 24),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pushAndRemoveUntil(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => const LoginPage(),
+                              ),
+                              (route) => false,
+                            );
+                          },
+                          child: const Text('Go to Login'),
+                        ),
+                      ],
                     ),
+                  ),
+                );
+              }
+
+              // ✅ FIX: User has profile but no ID uploaded - redirect to upload
+              if (hasData && !hasUploadedId) {
+                print('⚠️ User has profile but no ID uploaded - redirecting to upload');
+                
+                // Don't sign them out - just redirect to upload screen
+                if (role == 'pwd') {
+                  print('🔄 Redirecting to PWD ID upload');
+                  return PwdCardUploadScreen(
+                    userId: user.uid,
+                    userData: userData['data'] as Map<String, dynamic>,
                   );
-                } else {
-                  // Shouldn't reach this because we return earlier when isRegistering is true,
-                  // but be defensive: show loading spinner.
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
+                } else if (role == 'pao') {
+                  print('🔄 Redirecting to PAO ID upload');
+                  return PaoIdUploadScreen(
+                    userId: user.uid,
+                    userData: userData['data'] as Map<String, dynamic>,
                   );
                 }
               }
 
-              // Navigate based on role
-              if (role == 'pao') {
-                print('🔄 Redirecting to PAO Home');
-                return PAOHomePage();
-              } else if (role == 'pwd') {
-                print('🔄 Redirecting to PWD User Home');
-                return HomePage();
-              } else {
-                // Unknown role
-                print('⚠️ Unknown role: $role');
-                if (!isRegistering) {
-                  FirebaseAuth.instance.signOut();
-                  return const LoginPage();
-                } else {
-                  return const Scaffold(
-                    body: Center(child: CircularProgressIndicator()),
-                  );
+              // ✅ User has complete profile with uploaded ID - go to home
+              if (hasData && hasUploadedId) {
+                print('✅ User has complete profile - redirecting to home');
+                if (role == 'pao') {
+                  print('🔄 Redirecting to PAO Home');
+                  return PAOHomePage();
+                } else if (role == 'pwd') {
+                  print('🔄 Redirecting to PWD User Home');
+                  return HomePage();
                 }
               }
+
+              // ✅ Unknown state - sign out
+              print('⚠️ Unknown state - signing out');
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                await FirebaseAuth.instance.signOut();
+              });
+              
+              return const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(),
+                ),
+              );
             },
           );
         }

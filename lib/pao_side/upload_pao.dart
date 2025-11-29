@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:finalsakay/pao_side/pao_home.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -205,7 +206,7 @@ class _PaoIdUploadScreenState extends State<PaoIdUploadScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('PAO ID uploaded successfully! Please login.'),
+            content: Text('PAO ID uploaded successfully!.'),
             backgroundColor: Colors.green,
             duration: Duration(seconds: 2),
           ),
@@ -220,7 +221,7 @@ class _PaoIdUploadScreenState extends State<PaoIdUploadScreen> {
           // Navigate back to login page
           Navigator.of(context).pushAndRemoveUntil(
   MaterialPageRoute(
-    builder: (context) => const LoginPage(), // Import from main.dart
+    builder: (context) => const PAOHomePage(), // Import from main.dart
   ),
   (route) => false,
 );
