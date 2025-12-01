@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import '../navigation/nav_bar.dart';
 
@@ -282,7 +283,35 @@ class _MapsPageState extends State<MapsPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("User Map"),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white,
+                  width: 2,
+                ),
+              ),
+              child: Image.asset(
+                'assets/images/removed.png',
+                height: 42,
+                width: 42,
+                fit: BoxFit.contain,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              "User Map",
+              style: GoogleFonts.lato(
+                fontSize: 20,
+                fontWeight: FontWeight.w600,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ),
         backgroundColor: const Color(0xFF2B5F9E),
         foregroundColor: Colors.white,
         actions: [
@@ -419,28 +448,44 @@ class _MapsPageState extends State<MapsPage> {
             child: Column(
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  height: 50,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                  height: 56,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(25),
+                    color: const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(28),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.1),
-                        blurRadius: 10,
+                        color: Colors.black.withOpacity(0.08),
+                        blurRadius: 8,
                         offset: const Offset(0, 2),
                       ),
                     ],
                   ),
                   child: Row(
                     children: [
+                      const Icon(
+                        Icons.location_on,
+                        color: Color(0xFF2B5F9E),
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
                           controller: _searchController,
                           focusNode: _searchFocusNode,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            color: Colors.black87,
+                          ),
                           decoration: const InputDecoration(
                             hintText: "Search places...",
+                            hintStyle: TextStyle(
+                              color: Colors.black45,
+                              fontSize: 15,
+                            ),
                             border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
                           ),
                           onSubmitted: (value) async {
                             if (value.trim().isNotEmpty && searchSuggestions.isNotEmpty) {
@@ -457,12 +502,17 @@ class _MapsPageState extends State<MapsPage> {
                         )
                       else
                         IconButton(
-                          icon: const Icon(Icons.search),
+                          icon: const Icon(
+                            Icons.search,
+                            color: Color(0xFF2B5F9E),
+                          ),
                           onPressed: () {
                             if (_searchController.text.trim().isNotEmpty && searchSuggestions.isNotEmpty) {
                               selectSuggestion(searchSuggestions.first);
                             }
                           },
+                          padding: EdgeInsets.zero,
+                          constraints: const BoxConstraints(),
                         ),
                     ],
                   ),

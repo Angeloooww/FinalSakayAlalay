@@ -197,7 +197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               
                               // User Name
                               Text(
-                                '${userData!['firstName']} ${userData!['middleName'] ?? ''} ${userData!['lastName']}'.trim(),
+                                'Hello, ${userData!['firstName']} ${userData!['lastName']}!'.trim(),
                                 style: const TextStyle(
                                   fontSize: 24,
                                   fontWeight: FontWeight.bold,
