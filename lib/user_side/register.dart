@@ -31,12 +31,14 @@ class _UserDataScreenState extends State<UserDataScreen> {
   String? _selectedDisability;
 
   final List<String> _disabilityTypes = [
-    'Visual Impairment',
-    'Hearing Impairment',
-    'Mobility Impairment',
-    'Cognitive Disability',
-    'Speech Impairment',
-    'Multiple Disabilities',
+    'Learning Disability',
+    'Vision Impairment',
+    'Intellectual Disability',
+    'Orthopedic Disability',
+    'Psychosocial Disability',
+    'Chronic Illness',
+    'Communication Disability',
+    'Hearing Disability',
     'Other',
   ];
 
@@ -410,6 +412,8 @@ class _UserDataScreenState extends State<UserDataScreen> {
                                     'Select disability type',
                                     style: TextStyle(fontSize: 13),
                                   ),
+                                  isExpanded: true,
+                                  menuMaxHeight: 250, // Limit dropdown height
                                   items: _disabilityTypes.map((String type) {
                                     return DropdownMenuItem<String>(
                                       value: type,
