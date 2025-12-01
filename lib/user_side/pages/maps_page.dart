@@ -613,7 +613,7 @@ class _MapsPageState extends State<MapsPage> {
             ),
         ],
       ),
-      bottomNavigationBar: BottomNav(currentIndex: 2),
+      bottomNavigationBar: BottomNav(currentIndex: 1),
     );
   }
 }

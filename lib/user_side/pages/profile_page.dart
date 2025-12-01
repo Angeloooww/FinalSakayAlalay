@@ -141,17 +141,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('My Profile'),
+        title: const Text('User Settings'),
         centerTitle: true,
         backgroundColor: const Color(0xFF2B5F9E),
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () {
-              // Navigate to settings
-            },
-          ),
         ],
       ),
       body: isLoading
@@ -283,7 +277,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
-      bottomNavigationBar: BottomNav(currentIndex: 4),
+      bottomNavigationBar: BottomNav(currentIndex: 3),
     );
   }
 

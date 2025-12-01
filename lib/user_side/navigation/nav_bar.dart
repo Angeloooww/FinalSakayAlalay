@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../pages/home.dart';
-import '../pages/recent_page.dart';
 import '../pages/maps_page.dart';
 import '../pages/notification_page.dart';
 import '../pages/profile_page.dart';
@@ -25,15 +24,12 @@ class _BottomNavState extends State<BottomNav> {
         nextPage = const HomePage();
         break;
       case 1:
-        nextPage = const RecentPage();
-        break;
-      case 2:
         nextPage = const MapsPage();
         break;
-      case 3:
+      case 2:
         nextPage = const NotificationsPage();
         break;
-      case 4:
+      case 3:
         nextPage = const ProfileScreen();
         break;
       default:
@@ -54,7 +50,6 @@ class _BottomNavState extends State<BottomNav> {
       onTap: _onTap,
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-        BottomNavigationBarItem(icon: Icon(Icons.history), label: "Recent"),
         BottomNavigationBarItem(icon: Icon(Icons.map), label: "Maps"),
         BottomNavigationBarItem(icon: Icon(Icons.notifications), label: "Notifs"),
         BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
