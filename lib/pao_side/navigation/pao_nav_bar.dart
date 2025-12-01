@@ -1,7 +1,6 @@
 import 'package:finalsakay/pao_side/pages/pao_home.dart';
 import 'package:finalsakay/pao_side/pages/pao_notifications_page.dart';
 import 'package:finalsakay/pao_side/pages/pao_profile_page.dart';
-import 'package:finalsakay/pao_side/pages/pao_recent_page.dart';
 import 'package:flutter/material.dart';
 
 class PAOBotoomNav extends StatefulWidget {
@@ -24,12 +23,9 @@ class _PAOBotoomNavState extends State<PAOBotoomNav> {
         nextPage = const PAOHomePage();
         break;
       case 1:
-        nextPage = const PaoRecentPage();
-        break;
-      case 2:
         nextPage = const PaoNotificationPage();
         break;
-      case 3:
+      case 2:
         nextPage = const PaoProfilePage();
         break;
       default:
@@ -50,7 +46,6 @@ class _PAOBotoomNavState extends State<PAOBotoomNav> {
       onTap: _onTap,
       items: const [
         BottomNavigationBarItem(icon: Icon(Icons.home), label: "Home"),
-        BottomNavigationBarItem(icon: Icon(Icons.history), label: "Recent"),
         BottomNavigationBarItem(icon: Icon(Icons.notifications), label: "Notifs"),
         BottomNavigationBarItem(icon: Icon(Icons.person), label: "Profile"),
       ],

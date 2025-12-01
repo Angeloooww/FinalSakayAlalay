@@ -7,7 +7,7 @@ class PaoProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text("Recent Activities")),
+      appBar: AppBar(title: const Text("User Settings")),
 
       body: const Center(
         child: Text(
@@ -15,7 +15,7 @@ class PaoProfilePage extends StatelessWidget {
           style: TextStyle(fontSize: 22),
         ),
       ),
-      bottomNavigationBar: PAOBotoomNav(currentIndex: 1),
+      bottomNavigationBar: PAOBotoomNav(currentIndex: 2),
     );
   }
 }

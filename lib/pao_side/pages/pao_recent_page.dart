@@ -15,7 +15,7 @@ class PaoRecentPage extends StatelessWidget {
           style: TextStyle(fontSize: 22),
         ),
       ),
-      bottomNavigationBar: PAOBotoomNav(currentIndex: 1),
+      bottomNavigationBar: PAOBotoomNav(currentIndex: 2),
     );
   }
 }

@@ -262,7 +262,7 @@ class _MapsPageState extends State<PAOHomePage> {
           ),
         ],
       ),
-      bottomNavigationBar: PAOBotoomNav(currentIndex: 2),
+      bottomNavigationBar: PAOBotoomNav(currentIndex: 0),
     );
   }
 }
