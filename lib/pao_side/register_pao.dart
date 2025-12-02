@@ -25,7 +25,22 @@ class _PAORegistrationScreenState extends State<PAORegistrationScreen> {
   final TextEditingController confirmPasswordController = TextEditingController();
   final TextEditingController paoIdController = TextEditingController();
   final TextEditingController officeLocationController = TextEditingController();
-  
+  String? _selectedRoute;
+
+    final List<String> _iloiloCityRoutes = [
+      'Ungka-CPU-Jaro-City Proper',
+      'Ungka-Festive Walk-City Proper',
+      'SM City-Festive Walk-City Proper',
+      'Tagbak-Buntatala-City Proper',
+      'La Paz-Ticud-City Proper',
+      'Villa Plaza-Calumpang-City Proper',
+      'Mandurriao-Festive Walk-City Proper',
+      'Molo-Baluarte-City Proper',
+      'Lapuz-Barrio Obrero-City Proper',
+      'Mohon-Arevalo-City Proper',
+      'Parola-Infante-SM City',
+    ];
+
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _agreeToTerms = false;
@@ -48,6 +63,27 @@ class _PAORegistrationScreenState extends State<PAORegistrationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Please agree to the Terms and Conditions'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    if (_selectedPosition == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select your position'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    // ✅ ADD THIS ROUTE VALIDATION
+    if (_selectedRoute == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select your jeepney route'),
           backgroundColor: Colors.red,
         ),
       );
@@ -93,6 +129,7 @@ class _PAORegistrationScreenState extends State<PAORegistrationScreen> {
         'paoIdNum': paoIdController.text.trim(),
         'position': _selectedPosition,
         'officeLocCorp': officeLocationController.text.trim(),
+        'routeName': _selectedRoute,
         'userId': userId,
         'emailVerified': false,
         'accountStatus': 'pending',
@@ -318,7 +355,66 @@ class _PAORegistrationScreenState extends State<PAORegistrationScreen> {
                                   ),
                                 ),
                                 const SizedBox(height: 25),
-                                
+
+                                _buildSectionTitle('JEEP ROUTE INFORMATION'),
+                                const SizedBox(height: 15),
+
+                                // Route Name Dropdown with Scroll
+                                _buildLabel('ROUTE NAME'),
+                                const SizedBox(height: 5),
+                                DropdownButtonFormField<String>(
+                                  value: _selectedRoute,
+                                  decoration: InputDecoration(
+                                    border: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                      borderSide: const BorderSide(
+                                        color: _paoPrimaryColor,
+                                        width: 1.2,
+                                      ),
+                                    ),
+                                    enabledBorder: OutlineInputBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                      borderSide: const BorderSide(
+                                        color: _paoPrimaryColor,
+                                        width: 1.2,
+                                      ),
+                                    ),
+                                    contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 12,
+                                    ),
+                                  ),
+                                  hint: const Text(
+                                    'Select jeepney route',
+                                    style: TextStyle(fontSize: 13),
+                                  ),
+                                  isExpanded: true,
+                                  menuMaxHeight: 300, // ✅ This limits the dropdown height and adds scroll
+                                  items: _iloiloCityRoutes.map((String route) {
+                                    return DropdownMenuItem<String>(
+                                      value: route,
+                                      child: Text(
+                                        route,
+                                        style: const TextStyle(fontSize: 13),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    );
+                                  }).toList(),
+                                  onChanged: (String? newValue) {
+                                    setState(() {
+                                      _selectedRoute = newValue;
+                                    });
+                                  },
+                                  validator: (value) {
+                                    if (value == null || value.isEmpty) {
+                                      return 'Please select a route';
+                                    }
+                                    return null;
+                                  },
+                                ),
+
+                                const SizedBox(height: 25),
+
                                 // Personal Information Section
                                 _buildSectionTitle('PERSONAL INFORMATION'),
                                 const SizedBox(height: 15),
