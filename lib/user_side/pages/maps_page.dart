@@ -4,7 +4,6 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../navigation/nav_bar.dart';
@@ -86,30 +85,6 @@ class _MapsPageState extends State<MapsPage> {
     });
 
     _mapController.move(userLocation!, 17);
-  }
-
-  // ✅ LIVE PAO MARKERS
-  Stream<List<Marker>> getLivePaoMarkers() {
-    return FirebaseFirestore.instance
-        .collection("pao_locations")
-        .where("isOnline", isEqualTo: true)
-        .snapshots()
-        .map((snapshot) {
-      return snapshot.docs.map((doc) {
-        final data = doc.data();
-
-        return Marker(
-          point: LatLng(data["lat"], data["lng"]),
-          width: 50,
-          height: 50,
-          child: const Icon(
-            Icons.directions_bus,
-            size: 40,
-            color: Colors.blue,
-          ),
-        );
-      }).toList();
-    });
   }
 
   // ✅ FETCH SEARCH SUGGESTIONS
@@ -427,15 +402,6 @@ class _MapsPageState extends State<MapsPage> {
                         ),
                       ),
                   ],
-                ),
-
-                // ✅ LIVE PAO MARKERS
-                StreamBuilder<List<Marker>>(
-                  stream: getLivePaoMarkers(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) return const SizedBox();
-                    return MarkerLayer(markers: snapshot.data!);
-                  },
                 ),
               ],
             ),

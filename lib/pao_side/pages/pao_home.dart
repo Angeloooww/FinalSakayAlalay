@@ -111,7 +111,7 @@ class _MapsPageState extends State<PAOHomePage> {
   }
 
   // ✅ LOGOUT FUNCTION
-  Future<void> _handleLogout() async {
+Future<void> _handleLogout() async {
   final shouldLogout = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -136,10 +136,19 @@ class _MapsPageState extends State<PAOHomePage> {
   if (shouldLogout != true) return;
 
   try {
-    // Set PAO offline before logging out
     User? user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       try {
+        // ✅ Set PAO inactive in the main pao collection
+        await FirebaseFirestore.instance
+            .collection("pao")
+            .doc(user.uid)
+            .update({
+          "isActive": false,
+          "lastActiveAt": FieldValue.serverTimestamp(),
+        });
+
+        // ✅ Set PAO offline in pao_locations collection
         await FirebaseFirestore.instance
             .collection("pao_locations")
             .doc(user.uid)
@@ -147,23 +156,27 @@ class _MapsPageState extends State<PAOHomePage> {
           "isOnline": false,
           "updatedAt": FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
+        
+        print("✅ PAO status set to inactive and offline");
       } catch (e) {
-        print("Failed to set offline status: $e");
+        print("❌ Failed to update PAO status: $e");
+        // Continue with logout even if status update fails
       }
     }
 
     // Sign out
     await FirebaseAuth.instance.signOut();
+    print("✅ Successfully signed out");
 
-    // ✅ FIX: Wait for auth state to update, then let AuthWrapper handle navigation
+    // ✅ Let AuthWrapper handle navigation
     if (mounted) {
       // Pop all routes and go back to root
       Navigator.of(context).popUntil((route) => route.isFirst);
       
-      // Don't manually navigate - let AuthWrapper detect the logout
-      // The StreamBuilder will automatically show LoginPage
+      // AuthWrapper will automatically show LoginPage
     }
   } catch (e) {
+    print("❌ Logout error: $e");
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
