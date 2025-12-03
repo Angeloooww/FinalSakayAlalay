@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:finalsakay/main.dart';
 import 'package:finalsakay/pao_side/navigation/pao_nav_bar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -168,12 +169,12 @@ Future<void> _handleLogout() async {
     await FirebaseAuth.instance.signOut();
     print("✅ Successfully signed out");
 
-    // ✅ Let AuthWrapper handle navigation
+    // ✅ FIXED: Proper navigation reset
     if (mounted) {
-      // Pop all routes and go back to root
-      Navigator.of(context).popUntil((route) => route.isFirst);
-      
-      // AuthWrapper will automatically show LoginPage
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const SakayAlalayApp()),
+        (route) => false,  // Remove all previous routes
+      );
     }
   } catch (e) {
     print("❌ Logout error: $e");
