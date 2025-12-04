@@ -31,6 +31,7 @@ class _HomePageState extends State<HomePage> {
   List<String> _availableRoutes = [];
   List<PaoModel> _filteredPaos = [];
   bool _isLoadingRoutes = true;
+  PaoModel? _nearestPao; // ✅ Track nearest jeepney
 
   @override
   void initState() {
@@ -52,9 +53,11 @@ class _HomePageState extends State<HomePage> {
       setState(() {
         _isLoadingRoutes = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Failed to load routes: $e")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Failed to load routes: $e")),
+        );
+      }
     }
   }
 
@@ -62,13 +65,103 @@ class _HomePageState extends State<HomePage> {
     _firestoreService.getActivePaosByRoute(routeName).listen((paos) {
       setState(() {
         _filteredPaos = paos;
+        _nearestPao = _findNearestPao(paos); // ✅ Find nearest jeepney
       });
+
+      // ✅ Auto-zoom to nearest jeepney when route is selected
+      if (_nearestPao != null && currentLocation != null) {
+        _zoomToNearestPao();
+      }
     }, onError: (error) {
       print("Error fetching PAOs: $error");
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("Error loading jeepneys: $error")),
-      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text("Error loading jeepneys: $error")),
+        );
+      }
     });
+  }
+
+  // ✅ NEW: Find the nearest PAO to user's current location
+  PaoModel? _findNearestPao(List<PaoModel> paos) {
+    if (currentLocation == null || paos.isEmpty) return null;
+
+    PaoModel? nearest;
+    double minDistance = double.infinity;
+
+    for (var pao in paos) {
+      if (pao.lat == null || pao.lng == null) continue;
+
+      double distance = Geolocator.distanceBetween(
+        currentLocation!.latitude,
+        currentLocation!.longitude,
+        pao.lat!,
+        pao.lng!,
+      );
+
+      if (distance < minDistance) {
+        minDistance = distance;
+        nearest = pao;
+      }
+    }
+
+    return nearest;
+  }
+
+  // ✅ NEW: Zoom to show both user and nearest PAO
+  void _zoomToNearestPao() {
+    if (_nearestPao == null || currentLocation == null) return;
+    if (_nearestPao!.lat == null || _nearestPao!.lng == null) return;
+
+    final paoLocation = LatLng(_nearestPao!.lat!, _nearestPao!.lng!);
+
+    // Calculate bounds to show both markers
+    final bounds = LatLngBounds(
+      LatLng(
+        currentLocation!.latitude < paoLocation.latitude
+            ? currentLocation!.latitude
+            : paoLocation.latitude,
+        currentLocation!.longitude < paoLocation.longitude
+            ? currentLocation!.longitude
+            : paoLocation.longitude,
+      ),
+      LatLng(
+        currentLocation!.latitude > paoLocation.latitude
+            ? currentLocation!.latitude
+            : paoLocation.latitude,
+        currentLocation!.longitude > paoLocation.longitude
+            ? currentLocation!.longitude
+            : paoLocation.longitude,
+      ),
+    );
+
+    // Fit bounds with padding
+    _mapController.fitCamera(
+      CameraFit.bounds(
+        bounds: bounds,
+        padding: const EdgeInsets.all(100),
+      ),
+    );
+  }
+
+  // ✅ NEW: Calculate distance in human-readable format
+  String _getDistanceText(PaoModel pao) {
+    if (currentLocation == null || pao.lat == null || pao.lng == null) {
+      return "Unknown distance";
+    }
+
+    double distanceInMeters = Geolocator.distanceBetween(
+      currentLocation!.latitude,
+      currentLocation!.longitude,
+      pao.lat!,
+      pao.lng!,
+    );
+
+    if (distanceInMeters < 1000) {
+      return "${distanceInMeters.round()}m away";
+    } else {
+      return "${(distanceInMeters / 1000).toStringAsFixed(1)}km away";
+    }
   }
 
   Future<void> _requestLocationPermission() async {
@@ -116,7 +209,7 @@ class _HomePageState extends State<HomePage> {
         locationStatus = "Location found";
       });
 
-      _mapController.move(currentLocation!, 17);
+      _mapController.move(currentLocation!, 15);
     } catch (e) {
       setState(() {
         locationStatus = "Failed to get location: $e";
@@ -125,7 +218,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // ✅ NEW: Send PWD Flag Notification to PAO
   Future<void> _sendPwdFlag(PaoModel pao) async {
     if (currentLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,7 +241,6 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // Show confirmation dialog
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
@@ -184,22 +275,21 @@ class _HomePageState extends State<HomePage> {
 
       if (confirm != true) return;
 
-      // Send notification to Firestore
       await FirebaseFirestore.instance.collection("pwd_notifications").add({
-        "paoId": pao.id, // Make sure your PaoModel has an 'id' field
+        "paoId": pao.id,
         "passengerId": currentUser.uid,
         "passengerEmail": currentUser.email ?? "Unknown",
         "latitude": currentLocation!.latitude,
         "longitude": currentLocation!.longitude,
         "routeName": pao.routeName,
         "paoName": "${pao.lastName}, ${pao.middleName}",
-        "status": "pending", // pending, acknowledged, completed
+        "status": "pending",
         "timestamp": FieldValue.serverTimestamp(),
         "isRead": false,
       });
 
       if (mounted) {
-        Navigator.pop(context); // Close the PAO details sheet
+        Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
@@ -291,7 +381,7 @@ class _HomePageState extends State<HomePage> {
               mapController: _mapController,
               options: MapOptions(
                 initialCenter: currentLocation!,
-                initialZoom: 17,
+                initialZoom: 15,
               ),
               children: [
                 TileLayer(
@@ -301,36 +391,78 @@ class _HomePageState extends State<HomePage> {
                 ),
                 MarkerLayer(
                   markers: [
+                    // ✅ User location marker
                     Marker(
                       point: currentLocation!,
                       width: 60,
                       height: 60,
                       child: const Icon(
-                        Icons.location_on,
-                        size: 60,
+                        Icons.my_location,
+                        size: 40,
                         color: Color(0xFF2B5F9E),
                       ),
                     ),
-                    ..._filteredPaos.map((pao) {
+                    // ✅ PAO markers at their ACTUAL locations
+                    ..._filteredPaos.where((pao) => pao.lat != null && pao.lng != null).map((pao) {
+                      final isNearest = _nearestPao?.id == pao.id;
                       return Marker(
-                        point: currentLocation!,
-                        width: 50,
-                        height: 50,
+                        point: LatLng(pao.lat!, pao.lng!), // ✅ Use PAO's real location
+                        width: isNearest ? 70 : 50,
+                        height: isNearest ? 70 : 50,
                         child: GestureDetector(
                           onTap: () {
                             _showPaoDetails(pao);
                           },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 2),
-                            ),
-                            child: const Icon(
-                              Icons.directions_bus,
-                              color: Colors.white,
-                              size: 24,
-                            ),
+                          child: Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Container(
+                                decoration: BoxDecoration(
+                                  color: isNearest ? Colors.orange : Colors.green,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Colors.white,
+                                    width: isNearest ? 3 : 2,
+                                  ),
+                                  boxShadow: isNearest
+                                      ? [
+                                          BoxShadow(
+                                            color: Colors.orange.withOpacity(0.5),
+                                            blurRadius: 10,
+                                            spreadRadius: 2,
+                                          )
+                                        ]
+                                      : null,
+                                ),
+                                child: Icon(
+                                  Icons.directions_bus,
+                                  color: Colors.white,
+                                  size: isNearest ? 32 : 24,
+                                ),
+                              ),
+                              if (isNearest)
+                                Positioned(
+                                  top: 0,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.orange,
+                                      borderRadius: BorderRadius.circular(10),
+                                    ),
+                                    child: const Text(
+                                      'NEAREST',
+                                      style: TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       );
@@ -391,6 +523,76 @@ class _HomePageState extends State<HomePage> {
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold),
                             ),
+                            
+                            // ✅ Show nearest jeepney info
+                            if (_selectedRoute != null && _nearestPao != null)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                                child: Container(
+                                  padding: const EdgeInsets.all(12),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.orange,
+                                      width: 2,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(
+                                        Icons.near_me,
+                                        color: Colors.orange,
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            Text(
+                                              "Nearest: ${_nearestPao!.lastName}, ${_nearestPao!.middleName}",
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.bold,
+                                                fontSize: 13,
+                                              ),
+                                            ),
+                                            Text(
+                                              _getDistanceText(_nearestPao!),
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: Colors.grey[600],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.orange,
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 12,
+                                            vertical: 6,
+                                          ),
+                                        ),
+                                        onPressed: () {
+                                          _showPaoDetails(_nearestPao!);
+                                        },
+                                        child: const Text(
+                                          "View",
+                                          style: TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            
                             if (_selectedRoute != null)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -510,6 +712,7 @@ class _HomePageState extends State<HomePage> {
                                                   setState(() {
                                                     _selectedRoute = route;
                                                     _filteredPaos = [];
+                                                    _nearestPao = null;
                                                   });
                                                   _listenToPaosByRoute(
                                                       route);
@@ -533,6 +736,10 @@ class _HomePageState extends State<HomePage> {
                                 onPressed: _selectedRoute == null
                                     ? null
                                     : () {
+                                        if (_nearestPao != null) {
+                                          _zoomToNearestPao();
+                                        }
+                                        
                                         ScaffoldMessenger.of(context)
                                             .showSnackBar(
                                           SnackBar(
@@ -578,7 +785,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ✅ UPDATED: Show PAO details with PWD Flag button
   void _showPaoDetails(PaoModel pao) {
     showModalBottomSheet(
       context: context,
@@ -613,11 +819,12 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 16),
               _buildInfoRow("Position", pao.position),
               _buildInfoRow("Route", pao.routeName),
+              _buildInfoRow("Distance", _getDistanceText(pao)),
               _buildInfoRow(
                   "Status", pao.isVerified ? "Verified" : "Unverified"),
               const SizedBox(height: 20),
               
-              // ✅ PWD FLAG BUTTON
+              // PWD FLAG BUTTON
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
@@ -649,7 +856,12 @@ class _HomePageState extends State<HomePage> {
                   ),
                   onPressed: () {
                     Navigator.pop(context);
-                    // Add tracking functionality here
+                    if (pao.lat != null && pao.lng != null) {
+                      _mapController.move(
+                        LatLng(pao.lat!, pao.lng!),
+                        17,
+                      );
+                    }
                   },
                   child: const Text(
                     "Track This Jeepney",
