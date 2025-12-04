@@ -5,8 +5,10 @@ class PaoModel {
   final bool isVerified;
   final String lastName;
   final String middleName;
-  final bool isActive; // ✅ NEW FIELD
-  // Add other fields as needed
+  final bool isActive;
+  final bool isLocationEnabled;
+  final double? lat; // ✅ ADDED
+  final double? lng; // ✅ ADDED
 
   PaoModel({
     required this.id,
@@ -15,7 +17,10 @@ class PaoModel {
     required this.isVerified,
     required this.lastName,
     required this.middleName,
-    this.isActive = false, // ✅ NEW FIELD with default value
+    this.isActive = false,
+    this.isLocationEnabled = false,
+    this.lat, // ✅ ADDED
+    this.lng, // ✅ ADDED
   });
 
   factory PaoModel.fromFirestore(Map<String, dynamic> data, String id) {
@@ -26,7 +31,10 @@ class PaoModel {
       isVerified: data['isVerified'] ?? false,
       lastName: data['lastName'] ?? '',
       middleName: data['middleName'] ?? '',
-      isActive: data['isActive'] ?? false, // ✅ NEW FIELD
+      isActive: data['isActive'] ?? false,
+      isLocationEnabled: data['isLocationEnabled'] ?? false,
+      lat: (data['lat'] as num?)?.toDouble(), // ✅ ADDED
+      lng: (data['lng'] as num?)?.toDouble(), // ✅ ADDED
     );
   }
 }

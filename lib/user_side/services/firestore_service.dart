@@ -10,10 +10,142 @@ class FirestoreService {
   final String _paoLocationsCollection = 'pao_locations';
 
   // ============================================
+  // ACTIVE ROUTE & PAO OPERATIONS (PRIMARY)
+  // ============================================
+
+  /// Get all ACTIVE routes (routes with at least one online PAO)
+  Future<List<String>> getActiveRoutes() async {
+    try {
+      // Get all online PAOs from pao_locations
+      QuerySnapshot locationSnapshot = await _firestore
+          .collection(_paoLocationsCollection)
+          .where('isOnline', isEqualTo: true)
+          .get();
+
+      Set<String> routes = {};
+
+      // For each online PAO, get their route from the pao collection
+      for (var locationDoc in locationSnapshot.docs) {
+        final locationData = locationDoc.data() as Map<String, dynamic>?;
+        String paoId = locationData?['paoId'] ?? '';
+        
+        if (paoId.isNotEmpty) {
+          DocumentSnapshot paoDoc = await _firestore
+              .collection(_paoCollection)
+              .doc(paoId)
+              .get();
+
+          if (paoDoc.exists) {
+            final paoData = paoDoc.data() as Map<String, dynamic>?;
+            String? routeName = paoData?['routeName'];
+            
+            if (routeName != null && routeName.isNotEmpty) {
+              routes.add(routeName);
+            }
+          }
+        }
+      }
+
+      return routes.toList()..sort(); // Return sorted list
+    } catch (e) {
+      print("Error fetching active routes: $e");
+      return [];
+    }
+  }
+
+  /// Stream ACTIVE PAOs filtered by route name (real-time updates)
+  Stream<List<PaoModel>> getActivePaosByRoute(String routeName) {
+    return _firestore
+        .collection(_paoLocationsCollection)
+        .where('isOnline', isEqualTo: true)
+        .snapshots()
+        .asyncMap((locationSnapshot) async {
+          List<PaoModel> paos = [];
+          
+          for (var locationDoc in locationSnapshot.docs) {
+            final locationData = locationDoc.data();
+            String paoId = locationData['paoId'] ?? '';
+            
+            if (paoId.isEmpty) continue;
+            
+            // Get the PAO details from 'pao' collection
+            DocumentSnapshot paoDoc = await _firestore
+                .collection(_paoCollection)
+                .doc(paoId)
+                .get();
+            
+            if (paoDoc.exists) {
+              final paoData = paoDoc.data() as Map<String, dynamic>?;
+              
+              if (paoData != null) {
+                // Filter by route name
+                if (paoData['routeName'] == routeName) {
+                  // Merge location data with PAO data
+                  Map<String, dynamic> mergedData = {
+                    ...paoData,
+                    'lat': locationData['lat'],
+                    'lng': locationData['lng'],
+                    'isLocationEnabled': true, // They're online, so location is enabled
+                  };
+                  
+                  paos.add(PaoModel.fromFirestore(mergedData, paoDoc.id));
+                }
+              }
+            }
+          }
+          
+          return paos;
+        });
+  }
+
+  /// Check if a PAO is currently online
+  Future<bool> isPaoOnline(String paoId) async {
+    try {
+      QuerySnapshot snapshot = await _firestore
+          .collection(_paoLocationsCollection)
+          .where('paoId', isEqualTo: paoId)
+          .where('isOnline', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      return snapshot.docs.isNotEmpty;
+    } catch (e) {
+      print("Error checking PAO online status: $e");
+      return false;
+    }
+  }
+
+  /// Get PAO's current location
+  Future<Map<String, double>?> getPaoCurrentLocation(String paoId) async {
+    try {
+      QuerySnapshot snapshot = await _firestore
+          .collection(_paoLocationsCollection)
+          .where('paoId', isEqualTo: paoId)
+          .where('isOnline', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        final data = snapshot.docs.first.data() as Map<String, dynamic>?;
+        if (data != null) {
+          return {
+            'lat': (data['lat'] as num?)?.toDouble() ?? 0.0,
+            'lng': (data['lng'] as num?)?.toDouble() ?? 0.0,
+          };
+        }
+      }
+      return null;
+    } catch (e) {
+      print("Error fetching PAO location: $e");
+      return null;
+    }
+  }
+
+  // ============================================
   // ROUTE OPERATIONS
   // ============================================
 
-  /// Get all unique routes from the PAO collection
+  /// Get all unique routes from the PAO collection (regardless of online status)
   Future<List<String>> getAllRoutes() async {
     try {
       QuerySnapshot snapshot = await _firestore.collection(_paoCollection).get();
@@ -28,15 +160,14 @@ class FirestoreService {
         }
       }
 
-      // Return sorted list of unique routes
       return routes.toList()..sort();
     } catch (e) {
-      print("Error fetching routes: $e");
+      print("Error fetching all routes: $e");
       rethrow;
     }
   }
 
-  /// Get routes with count of available PAOs
+  /// Get routes with count of PAOs
   Future<Map<String, int>> getRoutesWithCount() async {
     try {
       QuerySnapshot snapshot = await _firestore.collection(_paoCollection).get();
@@ -58,11 +189,47 @@ class FirestoreService {
     }
   }
 
+  /// Search routes by keyword
+  Future<List<String>> searchRoutes(String searchQuery) async {
+    try {
+      final lowerQuery = searchQuery.toLowerCase();
+      final allRoutes = await getAllRoutes();
+      
+      return allRoutes
+          .where((route) => route.toLowerCase().contains(lowerQuery))
+          .toList();
+    } catch (e) {
+      print("Error searching routes: $e");
+      rethrow;
+    }
+  }
+
   // ============================================
   // PAO OPERATIONS
   // ============================================
 
-  /// Stream PAOs filtered by route name (real-time updates)
+  /// Get single PAO by ID
+  Future<PaoModel?> getPaoById(String paoId) async {
+    try {
+      DocumentSnapshot doc = await _firestore
+          .collection(_paoCollection)
+          .doc(paoId)
+          .get();
+
+      if (doc.exists && doc.data() != null) {
+        return PaoModel.fromFirestore(
+          doc.data() as Map<String, dynamic>,
+          doc.id,
+        );
+      }
+      return null;
+    } catch (e) {
+      print("Error fetching PAO by ID: $e");
+      return null;
+    }
+  }
+
+  /// Stream PAOs filtered by route name (real-time, all PAOs regardless of online status)
   Stream<List<PaoModel>> getPaosByRoute(String routeName) {
     return _firestore
         .collection(_paoCollection)
@@ -81,7 +248,7 @@ class FirestoreService {
                   return null;
                 }
               })
-              .whereType<PaoModel>() // Filter out null values
+              .whereType<PaoModel>()
               .toList();
         });
   }
@@ -186,27 +353,6 @@ class FirestoreService {
         });
   }
 
-  /// Get single PAO by ID
-  Future<PaoModel?> getPaoById(String paoId) async {
-    try {
-      DocumentSnapshot doc = await _firestore
-          .collection(_paoCollection)
-          .doc(paoId)
-          .get();
-
-      if (doc.exists && doc.data() != null) {
-        return PaoModel.fromFirestore(
-          doc.data() as Map<String, dynamic>,
-          doc.id,
-        );
-      }
-      return null;
-    } catch (e) {
-      print("Error fetching PAO by ID: $e");
-      rethrow;
-    }
-  }
-
   /// Update PAO route
   Future<void> updatePaoRoute(String paoId, String newRoute) async {
     try {
@@ -233,6 +379,19 @@ class FirestoreService {
     }
   }
 
+  /// Set PAO active status (call when PAO logs in/out)
+  Future<void> setPaoActiveStatus(String paoId, bool isActive) async {
+    try {
+      await _firestore.collection(_paoCollection).doc(paoId).update({
+        'isActive': isActive,
+        'lastActiveAt': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print("Error updating PAO active status: $e");
+      rethrow;
+    }
+  }
+
   // ============================================
   // PAO LOCATION OPERATIONS (For Real-time Tracking)
   // ============================================
@@ -241,20 +400,37 @@ class FirestoreService {
   Stream<List<Map<String, dynamic>>> getPaoLocationsByRoute(String routeName) {
     return _firestore
         .collection(_paoLocationsCollection)
-        .where('routeName', isEqualTo: routeName)
+        .where('isOnline', isEqualTo: true)
         .snapshots()
-        .map((snapshot) {
-          return snapshot.docs.map((doc) {
+        .asyncMap((locationSnapshot) async {
+          List<Map<String, dynamic>> locations = [];
+
+          for (var doc in locationSnapshot.docs) {
             final data = doc.data();
-            return {
-              'paoId': doc.id,
-              'latitude': data['latitude'],
-              'longitude': data['longitude'],
-              'routeName': data['routeName'],
-              'timestamp': data['timestamp'],
-              'heading': data['heading'], // Direction the vehicle is facing
-            };
-          }).toList();
+            String paoId = data['paoId'] ?? '';
+
+            // Get PAO details to check route
+            DocumentSnapshot paoDoc = await _firestore
+                .collection(_paoCollection)
+                .doc(paoId)
+                .get();
+
+            if (paoDoc.exists) {
+              final paoData = paoDoc.data() as Map<String, dynamic>?;
+              if (paoData?['routeName'] == routeName) {
+                locations.add({
+                  'paoId': paoId,
+                  'lat': data['lat'],
+                  'lng': data['lng'],
+                  'routeName': paoData?['routeName'],
+                  'timestamp': data['timestamp'],
+                  'heading': data['heading'],
+                });
+              }
+            }
+          }
+
+          return locations;
         });
   }
 
@@ -263,15 +439,29 @@ class FirestoreService {
     required String paoId,
     required double latitude,
     required double longitude,
-    required String routeName,
     double? heading,
+    bool isOnline = true,
   }) async {
     try {
+      // Get PAO's route name
+      DocumentSnapshot paoDoc = await _firestore
+          .collection(_paoCollection)
+          .doc(paoId)
+          .get();
+
+      String? routeName;
+      if (paoDoc.exists) {
+        final paoData = paoDoc.data() as Map<String, dynamic>?;
+        routeName = paoData?['routeName'];
+      }
+
       await _firestore.collection(_paoLocationsCollection).doc(paoId).set({
-        'latitude': latitude,
-        'longitude': longitude,
-        'routeName': routeName,
+        'paoId': paoId,
+        'lat': latitude,
+        'lng': longitude,
+        'routeName': routeName ?? '',
         'heading': heading,
+        'isOnline': isOnline,
         'timestamp': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } catch (e) {
@@ -280,28 +470,15 @@ class FirestoreService {
     }
   }
 
-  /// Get PAO location by ID (one-time fetch)
-  Future<Map<String, dynamic>?> getPaoLocation(String paoId) async {
+  /// Set PAO online/offline status in location collection
+  Future<void> setPaoLocationStatus(String paoId, bool isOnline) async {
     try {
-      DocumentSnapshot doc = await _firestore
-          .collection(_paoLocationsCollection)
-          .doc(paoId)
-          .get();
-
-      if (doc.exists && doc.data() != null) {
-        final data = doc.data() as Map<String, dynamic>;
-        return {
-          'paoId': doc.id,
-          'latitude': data['latitude'],
-          'longitude': data['longitude'],
-          'routeName': data['routeName'],
-          'timestamp': data['timestamp'],
-          'heading': data['heading'],
-        };
-      }
-      return null;
+      await _firestore.collection(_paoLocationsCollection).doc(paoId).update({
+        'isOnline': isOnline,
+        'timestamp': FieldValue.serverTimestamp(),
+      });
     } catch (e) {
-      print("Error fetching PAO location: $e");
+      print("Error updating PAO location status: $e");
       rethrow;
     }
   }
@@ -347,21 +524,6 @@ class FirestoreService {
     }
   }
 
-  /// Search routes by keyword
-  Future<List<String>> searchRoutes(String searchQuery) async {
-    try {
-      final lowerQuery = searchQuery.toLowerCase();
-      final allRoutes = await getAllRoutes();
-      
-      return allRoutes
-          .where((route) => route.toLowerCase().contains(lowerQuery))
-          .toList();
-    } catch (e) {
-      print("Error searching routes: $e");
-      rethrow;
-    }
-  }
-
   // ============================================
   // STATISTICS OPERATIONS
   // ============================================
@@ -378,6 +540,41 @@ class FirestoreService {
       return snapshot.count ?? 0;
     } catch (e) {
       print("Error getting PAO count: $e");
+      return 0;
+    }
+  }
+
+  /// Get count of ONLINE PAOs by route
+  Future<int> getOnlinePaoCountByRoute(String routeName) async {
+    try {
+      QuerySnapshot locationSnapshot = await _firestore
+          .collection(_paoLocationsCollection)
+          .where('isOnline', isEqualTo: true)
+          .get();
+
+      int count = 0;
+      for (var doc in locationSnapshot.docs) {
+        final data = doc.data() as Map<String, dynamic>?;
+        String paoId = data?['paoId'] ?? '';
+        
+        if (paoId.isNotEmpty) {
+          DocumentSnapshot paoDoc = await _firestore
+              .collection(_paoCollection)
+              .doc(paoId)
+              .get();
+
+          if (paoDoc.exists) {
+            final paoData = paoDoc.data() as Map<String, dynamic>?;
+            if (paoData?['routeName'] == routeName) {
+              count++;
+            }
+          }
+        }
+      }
+
+      return count;
+    } catch (e) {
+      print("Error getting online PAO count: $e");
       return 0;
     }
   }
@@ -414,7 +611,7 @@ class FirestoreService {
   }
 
   // ============================================
-  // USER OPERATIONS (Optional - if needed)
+  // USER OPERATIONS
   // ============================================
 
   /// Get user by ID
@@ -447,89 +644,4 @@ class FirestoreService {
       rethrow;
     }
   }
-
-        // ============================================
-      // ACTIVE PAO OPERATIONS (for online status)
-      // ============================================
-
-      /// Set PAO active status (call when PAO logs in/out)
-      Future<void> setPaoActiveStatus(String paoId, bool isActive) async {
-        try {
-          await _firestore.collection(_paoCollection).doc(paoId).update({
-            'isActive': isActive,
-            'lastActiveAt': FieldValue.serverTimestamp(),
-          });
-        } catch (e) {
-          print("Error updating PAO active status: $e");
-          rethrow;
-        }
-      }
-
-      /// Stream ACTIVE PAOs filtered by route name (real-time updates)
-      Stream<List<PaoModel>> getActivePaosByRoute(String routeName) {
-        return _firestore
-            .collection(_paoCollection)
-            .where('routeName', isEqualTo: routeName)
-            .where('isActive', isEqualTo: true) // ✅ Only active PAOs
-            .snapshots()
-            .map((snapshot) {
-              return snapshot.docs
-                  .map((doc) {
-                    try {
-                      return PaoModel.fromFirestore(
-                        doc.data() as Map<String, dynamic>,
-                        doc.id,
-                      );
-                    } catch (e) {
-                      print("Error parsing PAO document ${doc.id}: $e");
-                      return null;
-                    }
-                  })
-                  .whereType<PaoModel>()
-                  .toList();
-            });
-      }
-
-      /// Get all ACTIVE routes (routes with at least one active PAO)
-      Future<List<String>> getActiveRoutes() async {
-        try {
-          QuerySnapshot snapshot = await _firestore
-              .collection(_paoCollection)
-              .where('isActive', isEqualTo: true)
-              .get();
-          
-          Set<String> routes = {};
-
-          for (var doc in snapshot.docs) {
-            final data = doc.data() as Map<String, dynamic>?;
-            String? routeName = data?['routeName'];
-            
-            if (routeName != null && routeName.isNotEmpty) {
-              routes.add(routeName);
-            }
-          }
-
-          return routes.toList()..sort();
-        } catch (e) {
-          print("Error fetching active routes: $e");
-          rethrow;
-        }
-      }
-
-      /// Get count of active PAOs by route
-      Future<int> getActivePaoCountByRoute(String routeName) async {
-        try {
-          AggregateQuerySnapshot snapshot = await _firestore
-              .collection(_paoCollection)
-              .where('routeName', isEqualTo: routeName)
-              .where('isActive', isEqualTo: true)
-              .count()
-              .get();
-
-          return snapshot.count ?? 0;
-        } catch (e) {
-          print("Error getting active PAO count: $e");
-          return 0;
-        }
-      }
 }
