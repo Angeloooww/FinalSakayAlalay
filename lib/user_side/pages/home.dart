@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../navigation/nav_bar.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'profile_page.dart';
@@ -38,10 +40,9 @@ class _HomePageState extends State<HomePage> {
     _loadAvailableRoutes();
   }
 
-    // Load all available routes from Firestore - ONLY routes with active PAOs
   Future<void> _loadAvailableRoutes() async {
     try {
-      final routes = await _firestoreService.getActiveRoutes(); // ✅ CHANGED
+      final routes = await _firestoreService.getActiveRoutes();
       setState(() {
         _availableRoutes = routes;
         _isLoadingRoutes = false;
@@ -57,9 +58,8 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  // Listen to ACTIVE PAOs for selected route
   void _listenToPaosByRoute(String routeName) {
-    _firestoreService.getActivePaosByRoute(routeName).listen((paos) { // ✅ CHANGED
+    _firestoreService.getActivePaosByRoute(routeName).listen((paos) {
       setState(() {
         _filteredPaos = paos;
       });
@@ -122,6 +122,108 @@ class _HomePageState extends State<HomePage> {
         locationStatus = "Failed to get location: $e";
         isLoadingLocation = false;
       });
+    }
+  }
+
+  // ✅ NEW: Send PWD Flag Notification to PAO
+  Future<void> _sendPwdFlag(PaoModel pao) async {
+    if (currentLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Unable to get your location"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      User? currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Please login to send notifications"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Show confirmation dialog
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.accessible, color: Color(0xFF2B5F9E)),
+              SizedBox(width: 8),
+              Text("PWD Notification"),
+            ],
+          ),
+          content: Text(
+            "Send a notification to ${pao.lastName}, ${pao.middleName} that a PWD passenger is waiting at your current location?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2B5F9E),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                "Send Notification",
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      );
+
+      if (confirm != true) return;
+
+      // Send notification to Firestore
+      await FirebaseFirestore.instance.collection("pwd_notifications").add({
+        "paoId": pao.id, // Make sure your PaoModel has an 'id' field
+        "passengerId": currentUser.uid,
+        "passengerEmail": currentUser.email ?? "Unknown",
+        "latitude": currentLocation!.latitude,
+        "longitude": currentLocation!.longitude,
+        "routeName": pao.routeName,
+        "paoName": "${pao.lastName}, ${pao.middleName}",
+        "status": "pending", // pending, acknowledged, completed
+        "timestamp": FieldValue.serverTimestamp(),
+        "isRead": false,
+      });
+
+      if (mounted) {
+        Navigator.pop(context); // Close the PAO details sheet
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              "PWD notification sent to ${pao.lastName}, ${pao.middleName}",
+            ),
+            backgroundColor: Colors.green,
+            action: SnackBarAction(
+              label: "OK",
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print("Error sending PWD flag: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to send notification: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
 
@@ -199,7 +301,6 @@ class _HomePageState extends State<HomePage> {
                 ),
                 MarkerLayer(
                   markers: [
-                    // User's current location marker
                     Marker(
                       point: currentLocation!,
                       width: 60,
@@ -210,13 +311,9 @@ class _HomePageState extends State<HomePage> {
                         color: Color(0xFF2B5F9E),
                       ),
                     ),
-                    // PAO/Jeepney markers for selected route
                     ..._filteredPaos.map((pao) {
-                      // If PAO has location data, show them on map
-                      // You'll need to add latitude/longitude fields to your PaoModel
-                      // For now, this is a placeholder
                       return Marker(
-                        point: currentLocation!, // Replace with pao.location when available
+                        point: currentLocation!,
                         width: 50,
                         height: 50,
                         child: GestureDetector(
@@ -242,8 +339,6 @@ class _HomePageState extends State<HomePage> {
                 ),
               ],
             ),
-
-          // DRAGGABLE PANEL WITH ROUTE FILTERING
           DraggableScrollableSheet(
             controller: _sheetController,
             initialChildSize: 0.15,
@@ -271,8 +366,6 @@ class _HomePageState extends State<HomePage> {
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             const SizedBox(height: 8),
-
-                            // Drag handle
                             GestureDetector(
                               onTap: () {
                                 _sheetController.animateTo(
@@ -291,17 +384,13 @@ class _HomePageState extends State<HomePage> {
                                 ),
                               ),
                             ),
-
                             const SizedBox(height: 12),
-
                             const Text(
                               "Find a Route",
                               style: TextStyle(
                                   fontSize: 18,
                                   fontWeight: FontWeight.bold),
                             ),
-
-                            // Show selected route info
                             if (_selectedRoute != null)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -347,10 +436,7 @@ class _HomePageState extends State<HomePage> {
                                   ),
                                 ),
                               ),
-
                             const SizedBox(height: 10),
-
-                            // Routes list
                             _isLoadingRoutes
                                 ? const Center(
                                     child: Padding(
@@ -433,8 +519,6 @@ class _HomePageState extends State<HomePage> {
                                           },
                                         ),
                                       ),
-
-                            // Confirm button
                             Padding(
                               padding: const EdgeInsets.all(12),
                               child: ElevatedButton(
@@ -494,7 +578,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // Show PAO details in a bottom sheet
+  // ✅ UPDATED: Show PAO details with PWD Flag button
   void _showPaoDetails(PaoModel pao) {
     showModalBottomSheet(
       context: context,
@@ -532,6 +616,30 @@ class _HomePageState extends State<HomePage> {
               _buildInfoRow(
                   "Status", pao.isVerified ? "Verified" : "Unverified"),
               const SizedBox(height: 20),
+              
+              // ✅ PWD FLAG BUTTON
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.orange,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                  icon: const Icon(Icons.accessible, color: Colors.white),
+                  label: const Text(
+                    "PWD Waiting Here",
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: () => _sendPwdFlag(pao),
+                ),
+              ),
+              
+              const SizedBox(height: 12),
+              
+              // Track button
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton(
@@ -541,7 +649,7 @@ class _HomePageState extends State<HomePage> {
                   ),
                   onPressed: () {
                     Navigator.pop(context);
-                    // Add booking or tracking functionality here
+                    // Add tracking functionality here
                   },
                   child: const Text(
                     "Track This Jeepney",
