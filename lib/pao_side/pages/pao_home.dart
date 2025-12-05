@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'dart:async';
 import 'package:finalsakay/main.dart';
 import 'package:finalsakay/pao_side/navigation/pao_nav_bar.dart';
 import 'package:flutter/material.dart';
@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:geolocator/geolocator.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:convert';
 
 class PAOHomePage extends StatefulWidget {
   const PAOHomePage({super.key});
@@ -28,6 +29,7 @@ class _MapsPageState extends State<PAOHomePage> {
   // ✅ PWD Notifications
   List<Map<String, dynamic>> _pwdNotifications = [];
   int _unreadNotificationsCount = 0;
+  final Set<String> _processedNotificationIds = {}; // Track shown notifications
 
   @override
   void initState() {
@@ -37,10 +39,15 @@ class _MapsPageState extends State<PAOHomePage> {
     _listenToPwdNotifications();
   }
 
-  // ✅ Listen to PWD notifications in real-time
+  // ✅ FIXED: Listen to PWD notifications in real-time
   void _listenToPwdNotifications() {
     User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      print("❌ No user logged in");
+      return;
+    }
+
+    print("✅ Starting PWD notification listener for user: ${user.uid}");
 
     FirebaseFirestore.instance
         .collection("pwd_notifications")
@@ -49,6 +56,26 @@ class _MapsPageState extends State<PAOHomePage> {
         .orderBy("timestamp", descending: true)
         .snapshots()
         .listen((snapshot) {
+      print("📩 Received ${snapshot.docs.length} notifications");
+
+      // Check for NEW notifications
+      List<Map<String, dynamic>> newNotifications = [];
+
+      for (var doc in snapshot.docs) {
+        Map<String, dynamic> notifData = {
+          "id": doc.id,
+          ...doc.data(),
+        };
+
+        // Only show alert for NEW unprocessed notifications
+        if (!_processedNotificationIds.contains(doc.id) &&
+            notifData['isRead'] == false) {
+          newNotifications.add(notifData);
+          _processedNotificationIds.add(doc.id); // Mark as processed
+          print("🆕 New notification: ${doc.id}");
+        }
+      }
+
       setState(() {
         _pwdNotifications = snapshot.docs.map((doc) {
           return {
@@ -62,121 +89,159 @@ class _MapsPageState extends State<PAOHomePage> {
             .length;
       });
 
-      // Show alert if new notification arrives
-      if (_unreadNotificationsCount > 0 && _pwdNotifications.isNotEmpty) {
-        _showNewNotificationAlert(_pwdNotifications.first);
+      print("📊 Total notifications: ${_pwdNotifications.length}");
+      print("🔔 Unread count: $_unreadNotificationsCount");
+
+      // Show alert ONLY for NEW notifications
+      if (newNotifications.isNotEmpty) {
+        _showNewNotificationAlert(newNotifications.first);
       }
+    }, onError: (error) {
+      print("❌ Error listening to notifications: $error");
     });
   }
 
-  // ✅ Show alert with Accept/Decline options
+  // ✅ FIXED: Show alert with Accept/Decline options
   void _showNewNotificationAlert(Map<String, dynamic> notification) {
+    if (!mounted) return;
+
+    print("🔔 Showing alert for notification: ${notification['id']}");
+
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        icon: const Icon(
-          Icons.accessible,
-          size: 48,
-          color: Colors.orange,
-        ),
-        title: const Text("PWD Passenger Waiting!"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              "A PWD passenger needs assistance",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+      builder: (context) => WillPopScope(
+        onWillPop: () async => false,
+        child: AlertDialog(
+          icon: const Icon(
+            Icons.accessible,
+            size: 48,
+            color: Colors.orange,
+          ),
+          title: const Text(
+            "PWD Passenger Waiting!",
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Colors.orange.shade200, width: 2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildDetailRow(
+                        Icons.person,
+                        "Passenger",
+                        notification['passengerName'] ?? "Unknown",
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDetailRow(
+                        Icons.email,
+                        "Contact",
+                        notification['passengerEmail'] ?? "Unknown",
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDetailRow(
+                        Icons.route,
+                        "Route",
+                        notification['routeName'] ?? "Unknown",
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDetailRow(
+                        Icons.location_on,
+                        "Coordinates",
+                        "${notification['latitude']?.toStringAsFixed(4) ?? 'N/A'}, ${notification['longitude']?.toStringAsFixed(4) ?? 'N/A'}",
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.info_outline, color: Colors.blue, size: 20),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          "Do you have available seats for this PWD passenger?",
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.orange.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.orange.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildDetailRow(
-                    Icons.person,
-                    "Passenger",
-                    notification['passengerName'] ?? "Unknown",
-                  ),
-                  const SizedBox(height: 8),
-                  _buildDetailRow(
-                    Icons.email,
-                    "Email",
-                    notification['passengerEmail'] ?? "Unknown",
-                  ),
-                  const SizedBox(height: 8),
-                  _buildDetailRow(
-                    Icons.route,
-                    "Route",
-                    notification['routeName'] ?? "Unknown",
-                  ),
-                  const SizedBox(height: 8),
-                  _buildDetailRow(
-                    Icons.location_on,
-                    "Location",
-                    "${notification['latitude'].toStringAsFixed(4)}, ${notification['longitude'].toStringAsFixed(4)}",
-                  ),
-                ],
+          ),
+          actions: [
+            TextButton.icon(
+              onPressed: () {
+                _viewPwdLocationWithoutClosing(notification);
+              },
+              icon: const Icon(Icons.map, size: 18),
+              label: const Text("View Map"),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.blue,
               ),
             ),
-            const SizedBox(height: 12),
-            const Text(
-              "Do you have available seats for this passenger?",
-              style: TextStyle(fontSize: 13, fontStyle: FontStyle.italic),
+            const Spacer(),
+            OutlinedButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+                _respondToNotification(
+                  notification['id'],
+                  "declined",
+                  "No available seats",
+                );
+              },
+              icon: const Icon(Icons.cancel, size: 18),
+              label: const Text("No Seats"),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red,
+                side: const BorderSide(color: Colors.red, width: 2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              ),
+              icon: const Icon(Icons.check_circle, color: Colors.white, size: 18),
+              label: const Text(
+                "Accept",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                _respondToNotification(
+                  notification['id'],
+                  "accepted",
+                  "Seats available",
+                );
+              },
             ),
           ],
         ),
-        actions: [
-          // ✅ View Location Button
-          TextButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              _viewPwdLocation(notification);
-            },
-            icon: const Icon(Icons.map, size: 18),
-            label: const Text("View Map"),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.blue,
-            ),
-          ),
-          const Spacer(),
-          // ✅ Decline Button
-          OutlinedButton.icon(
-            onPressed: () {
-              Navigator.pop(context);
-              _respondToNotification(notification['id'], "declined", "No available seats");
-            },
-            icon: const Icon(Icons.cancel, size: 18),
-            label: const Text("No Seats"),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: Colors.red,
-              side: const BorderSide(color: Colors.red),
-            ),
-          ),
-          const SizedBox(width: 8),
-          // ✅ Accept Button
-          ElevatedButton.icon(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-            ),
-            icon: const Icon(Icons.check_circle, color: Colors.white, size: 18),
-            label: const Text(
-              "Accept",
-              style: TextStyle(color: Colors.white),
-            ),
-            onPressed: () {
-              Navigator.pop(context);
-              _respondToNotification(notification['id'], "accepted", "Seats available");
-            },
-          ),
-        ],
       ),
     );
   }
@@ -214,12 +279,52 @@ class _MapsPageState extends State<PAOHomePage> {
     );
   }
 
+  // ✅ View location without closing dialog
+  void _viewPwdLocationWithoutClosing(Map<String, dynamic> notification) {
+    final latitude = notification['latitude'];
+    final longitude = notification['longitude'];
+
+    if (latitude == null || longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Invalid location coordinates"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final pwdLocation = LatLng(latitude, longitude);
+
+    setState(() {
+      searchedLocation = pwdLocation;
+    });
+
+    _mapController.move(pwdLocation, 17);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
+          children: [
+            Icon(Icons.location_on, color: Colors.white),
+            SizedBox(width: 8),
+            Text("Showing PWD passenger location on map"),
+          ],
+        ),
+        backgroundColor: Colors.orange,
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
   // ✅ Respond to PWD notification (Accept or Decline)
   Future<void> _respondToNotification(
     String notificationId,
     String status,
     String message,
   ) async {
+    print("📤 Responding to notification $notificationId: $status");
+
     try {
       await FirebaseFirestore.instance
           .collection("pwd_notifications")
@@ -231,6 +336,8 @@ class _MapsPageState extends State<PAOHomePage> {
         "isRead": true,
       });
 
+      print("✅ Response sent successfully");
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -241,10 +348,12 @@ class _MapsPageState extends State<PAOHomePage> {
                   color: Colors.white,
                 ),
                 const SizedBox(width: 8),
-                Text(
-                  status == "accepted"
-                      ? "Accepted - PWD passenger notified"
-                      : "Declined - Passenger will be notified",
+                Expanded(
+                  child: Text(
+                    status == "accepted"
+                        ? "Accepted - PWD passenger notified"
+                        : "Declined - Passenger will be notified",
+                  ),
                 ),
               ],
             ),
@@ -254,7 +363,7 @@ class _MapsPageState extends State<PAOHomePage> {
         );
       }
     } catch (e) {
-      print("Error responding to notification: $e");
+      print("❌ Error responding to notification: $e");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -273,17 +382,28 @@ class _MapsPageState extends State<PAOHomePage> {
           .collection("pwd_notifications")
           .doc(notificationId)
           .update({"isRead": true});
+      print("✅ Marked notification as read: $notificationId");
     } catch (e) {
-      print("Error marking notification as read: $e");
+      print("❌ Error marking notification as read: $e");
     }
   }
 
-  // ✅ View PWD location on map
+  // ✅ View PWD location on map (from list)
   void _viewPwdLocation(Map<String, dynamic> notification) {
-    final pwdLocation = LatLng(
-      notification['latitude'],
-      notification['longitude'],
-    );
+    final latitude = notification['latitude'];
+    final longitude = notification['longitude'];
+
+    if (latitude == null || longitude == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Invalid location coordinates"),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    final pwdLocation = LatLng(latitude, longitude);
 
     setState(() {
       searchedLocation = pwdLocation;
@@ -424,10 +544,10 @@ class _MapsPageState extends State<PAOHomePage> {
                                     children: [
                                       const SizedBox(height: 4),
                                       Text(
-                                        "Route: ${notification['routeName']}",
+                                        "Route: ${notification['routeName'] ?? 'Unknown'}",
                                       ),
                                       Text(
-                                        "Passenger: ${notification['passengerEmail']}",
+                                        "Passenger: ${notification['passengerName'] ?? 'Unknown'}",
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: Colors.grey[600],
@@ -440,7 +560,8 @@ class _MapsPageState extends State<PAOHomePage> {
                                       PopupMenuItem(
                                         child: const Row(
                                           children: [
-                                            Icon(Icons.navigation, size: 18, color: Colors.blue),
+                                            Icon(Icons.navigation,
+                                                size: 18, color: Colors.blue),
                                             SizedBox(width: 8),
                                             Text("View Location"),
                                           ],
@@ -458,7 +579,8 @@ class _MapsPageState extends State<PAOHomePage> {
                                       PopupMenuItem(
                                         child: const Row(
                                           children: [
-                                            Icon(Icons.check_circle, size: 18, color: Colors.green),
+                                            Icon(Icons.check_circle,
+                                                size: 18, color: Colors.green),
                                             SizedBox(width: 8),
                                             Text("Accept (Seats Available)"),
                                           ],
@@ -479,7 +601,8 @@ class _MapsPageState extends State<PAOHomePage> {
                                       PopupMenuItem(
                                         child: const Row(
                                           children: [
-                                            Icon(Icons.cancel, size: 18, color: Colors.red),
+                                            Icon(Icons.cancel,
+                                                size: 18, color: Colors.red),
                                             SizedBox(width: 8),
                                             Text("Decline (No Seats)"),
                                           ],
@@ -515,7 +638,10 @@ class _MapsPageState extends State<PAOHomePage> {
 
   void startPaoLiveTracking() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
+    if (!serviceEnabled) {
+      print("❌ Location services disabled");
+      return;
+    }
 
     LocationPermission permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
@@ -523,7 +649,12 @@ class _MapsPageState extends State<PAOHomePage> {
     }
 
     User? user = FirebaseAuth.instance.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      print("❌ No user for location tracking");
+      return;
+    }
+
+    print("✅ Starting live location tracking for PAO: ${user.uid}");
 
     Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
@@ -562,6 +693,7 @@ class _MapsPageState extends State<PAOHomePage> {
           .doc(user.uid)
           .update({"isOnline": false});
     }
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -572,23 +704,47 @@ class _MapsPageState extends State<PAOHomePage> {
       "&format=json&limit=1",
     );
 
-    final response = await http.get(url, headers: {
-      "User-Agent": "sakay-alalay-app",
-    });
+    try {
+      final response = await http.get(url, headers: {
+        "User-Agent": "sakay-alalay-app",
+      });
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
 
-      if (data.isNotEmpty) {
-        final double lat = double.parse(data[0]["lat"]);
-        final double lon = double.parse(data[0]["lon"]);
+        if (data.isNotEmpty) {
+          final double lat = double.parse(data[0]["lat"]);
+          final double lon = double.parse(data[0]["lon"]);
 
-        setState(() {
-          searchedLocation = LatLng(lat, lon);
-        });
+          setState(() {
+            searchedLocation = LatLng(lat, lon);
+          });
 
-        _mapController.move(searchedLocation!, 17);
+          _mapController.move(searchedLocation!, 17);
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text("Found: ${data[0]['display_name']}"),
+              backgroundColor: Colors.green,
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text("Location not found"),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
       }
+    } catch (e) {
+      print("Search error: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Search failed: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
 
@@ -663,7 +819,6 @@ class _MapsPageState extends State<PAOHomePage> {
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(

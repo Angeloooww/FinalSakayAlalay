@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -31,7 +32,11 @@ class _HomePageState extends State<HomePage> {
   List<String> _availableRoutes = [];
   List<PaoModel> _filteredPaos = [];
   bool _isLoadingRoutes = true;
-  PaoModel? _nearestPao; // ✅ Track nearest jeepney
+  PaoModel? _nearestPao;
+  
+  // ✅ Track active PWD request
+  String? _activePwdRequestId;
+  StreamSubscription<DocumentSnapshot>? _pwdRequestListener;
 
   @override
   void initState() {
@@ -39,6 +44,214 @@ class _HomePageState extends State<HomePage> {
     _mapController = MapController();
     _requestLocationPermission();
     _loadAvailableRoutes();
+  }
+
+  // ✅ Listen to PWD request response
+  // ✅ Listen to PWD request response - FIXED VERSION
+void _listenToPwdRequestResponse(String requestId) {
+  _pwdRequestListener?.cancel();
+  
+  _pwdRequestListener = FirebaseFirestore.instance
+      .collection("pwd_notifications")
+      .doc(requestId)
+      .snapshots()
+      .listen((snapshot) {
+    if (!snapshot.exists) return;
+    
+    final data = snapshot.data();
+    if (data == null) return;
+    
+    final status = data['status'] as String?;
+    
+    // ✅ Add null check before calling _showDriverResponse
+    if (status != null && (status == "accepted" || status == "declined")) {
+      _showDriverResponse(status, data);
+      _pwdRequestListener?.cancel();
+      setState(() {
+        _activePwdRequestId = null;
+      });
+    }
+  });
+}
+
+  // ✅ Show driver's response to passenger
+  void _showDriverResponse(String status, Map<String, dynamic> data) {
+    if (!mounted) return;
+    
+    final bool isAccepted = status == "accepted";
+    final String paoName = data['paoName'] ?? "Driver";
+    
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: Icon(
+          isAccepted ? Icons.check_circle : Icons.cancel,
+          size: 56,
+          color: isAccepted ? Colors.green : Colors.orange,
+        ),
+        title: Text(
+          isAccepted ? "Request Accepted!" : "Request Declined",
+          style: TextStyle(
+            color: isAccepted ? Colors.green : Colors.orange,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: isAccepted 
+                    ? Colors.green.shade50 
+                    : Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isAccepted 
+                      ? Colors.green.shade200 
+                      : Colors.orange.shade200,
+                  width: 2,
+                ),
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    isAccepted ? Icons.directions_bus : Icons.event_seat,
+                    size: 48,
+                    color: isAccepted ? Colors.green : Colors.orange,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    isAccepted
+                        ? "Please wait for the driver to pick you up"
+                        : "Sorry, there are no available seats in this jeepney",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: isAccepted ? Colors.green.shade800 : Colors.orange.shade800,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Column(
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.person, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Driver: $paoName",
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.route, size: 16),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                "Route: ${data['routeName'] ?? 'N/A'}",
+                                style: const TextStyle(fontSize: 13),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (isAccepted) ...[
+                    const SizedBox(height: 12),
+                    const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.accessibility, size: 16, color: Colors.green),
+                        SizedBox(width: 4),
+                        Text(
+                          "Driver is aware of PWD passenger",
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (!isAccepted) ...[
+              const SizedBox(height: 12),
+              const Text(
+                "You can try flagging another jeepney on this route.",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                  color: Colors.grey,
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          if (!isAccepted)
+            TextButton.icon(
+              onPressed: () {
+                Navigator.pop(context);
+              },
+              icon: const Icon(Icons.search),
+              label: const Text("Find Another"),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.orange,
+              ),
+            ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isAccepted ? Colors.green : Colors.orange,
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+            ),
+            onPressed: () {
+              Navigator.pop(context);
+              if (isAccepted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Row(
+                      children: [
+                        Icon(Icons.info_outline, color: Colors.white),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text("Stay visible at your location. Driver is on the way!"),
+                        ),
+                      ],
+                    ),
+                    backgroundColor: Colors.green,
+                    duration: Duration(seconds: 4),
+                  ),
+                );
+              }
+            },
+            child: Text(
+              isAccepted ? "Got It" : "OK",
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _loadAvailableRoutes() async {
@@ -65,10 +278,9 @@ class _HomePageState extends State<HomePage> {
     _firestoreService.getActivePaosByRoute(routeName).listen((paos) {
       setState(() {
         _filteredPaos = paos;
-        _nearestPao = _findNearestPao(paos); // ✅ Find nearest jeepney
+        _nearestPao = _findNearestPao(paos);
       });
 
-      // ✅ Auto-zoom to nearest jeepney when route is selected
       if (_nearestPao != null && currentLocation != null) {
         _zoomToNearestPao();
       }
@@ -82,7 +294,6 @@ class _HomePageState extends State<HomePage> {
     });
   }
 
-  // ✅ NEW: Find the nearest PAO to user's current location
   PaoModel? _findNearestPao(List<PaoModel> paos) {
     if (currentLocation == null || paos.isEmpty) return null;
 
@@ -108,14 +319,12 @@ class _HomePageState extends State<HomePage> {
     return nearest;
   }
 
-  // ✅ NEW: Zoom to show both user and nearest PAO
   void _zoomToNearestPao() {
     if (_nearestPao == null || currentLocation == null) return;
     if (_nearestPao!.lat == null || _nearestPao!.lng == null) return;
 
     final paoLocation = LatLng(_nearestPao!.lat!, _nearestPao!.lng!);
 
-    // Calculate bounds to show both markers
     final bounds = LatLngBounds(
       LatLng(
         currentLocation!.latitude < paoLocation.latitude
@@ -135,7 +344,6 @@ class _HomePageState extends State<HomePage> {
       ),
     );
 
-    // Fit bounds with padding
     _mapController.fitCamera(
       CameraFit.bounds(
         bounds: bounds,
@@ -144,7 +352,6 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ✅ NEW: Calculate distance in human-readable format
   String _getDistanceText(PaoModel pao) {
     if (currentLocation == null || pao.lat == null || pao.lng == null) {
       return "Unknown distance";
@@ -219,118 +426,151 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _sendPwdFlag(PaoModel pao) async {
-  if (currentLocation == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text("Unable to get your location"),
-        backgroundColor: Colors.red,
-      ),
-    );
-    return;
-  }
-
-  try {
-    User? currentUser = FirebaseAuth.instance.currentUser;
-    if (currentUser == null) {
+    if (currentLocation == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Please login to send notifications"),
+          content: Text("Unable to get your location"),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    // ✅ Get passenger details from Firestore
-    DocumentSnapshot userDoc = await FirebaseFirestore.instance
-        .collection("users")
-        .doc(currentUser.uid)
-        .get();
+    try {
+      User? currentUser = FirebaseAuth.instance.currentUser;
+      if (currentUser == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Please login to send notifications"),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
 
-    String passengerName = "Unknown";
-    if (userDoc.exists) {
-      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
-      passengerName = "${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}".trim();
-      if (passengerName.isEmpty) passengerName = "Unknown";
-    }
+      // ✅ Check if there's already an active request
+      if (_activePwdRequestId != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("You already have a pending request. Please wait for driver's response."),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 3),
+          ),
+        );
+        return;
+      }
 
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Row(
-          children: [
-            Icon(Icons.accessible, color: Color(0xFF2B5F9E)),
-            SizedBox(width: 8),
-            Text("PWD Notification"),
+      // Get passenger details from Firestore
+      DocumentSnapshot userDoc = await FirebaseFirestore.instance
+          .collection("users")
+          .doc(currentUser.uid)
+          .get();
+
+      String passengerName = "Unknown";
+      if (userDoc.exists) {
+        Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+        passengerName = "${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}".trim();
+        if (passengerName.isEmpty) passengerName = "Unknown";
+      }
+
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.accessible, color: Color(0xFF2B5F9E)),
+              SizedBox(width: 8),
+              Text("PWD Notification"),
+            ],
+          ),
+          content: Text(
+            "Send a notification to ${pao.lastName}, ${pao.middleName} that a PWD passenger is waiting at your current location?",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text("Cancel"),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2B5F9E),
+              ),
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text(
+                "Send Notification",
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
           ],
         ),
-        content: Text(
-          "Send a notification to ${pao.lastName}, ${pao.middleName} that a PWD passenger is waiting at your current location?",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text("Cancel"),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF2B5F9E),
-            ),
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text(
-              "Send Notification",
-              style: TextStyle(color: Colors.white),
-            ),
-          ),
-        ],
-      ),
-    );
-
-    if (confirm != true) return;
-
-    // ✅ Create notification with passenger details
-    await FirebaseFirestore.instance.collection("pwd_notifications").add({
-      "paoId": pao.id,
-      "passengerId": currentUser.uid,
-      "passengerName": passengerName, // ✅ Added passenger name
-      "passengerEmail": currentUser.email ?? "Unknown",
-      "latitude": currentLocation!.latitude,
-      "longitude": currentLocation!.longitude,
-      "routeName": pao.routeName,
-      "paoName": "${pao.lastName}, ${pao.middleName}",
-      "status": "pending", // ✅ Can be: pending, accepted, declined
-      "timestamp": FieldValue.serverTimestamp(),
-      "isRead": false,
-    });
-
-    if (mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            "PWD notification sent to ${pao.lastName}, ${pao.middleName}",
-          ),
-          backgroundColor: Colors.green,
-          action: SnackBarAction(
-            label: "OK",
-            textColor: Colors.white,
-            onPressed: () {},
-          ),
-        ),
       );
-    }
-  } catch (e) {
-    print("Error sending PWD flag: $e");
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Failed to send notification: $e"),
-          backgroundColor: Colors.red,
-        ),
-      );
+
+      if (confirm != true) return;
+
+      // ✅ Create notification and get document reference
+      DocumentReference docRef = await FirebaseFirestore.instance
+          .collection("pwd_notifications")
+          .add({
+        "paoId": pao.id,
+        "passengerId": currentUser.uid,
+        "passengerName": passengerName,
+        "passengerEmail": currentUser.email ?? "Unknown",
+        "latitude": currentLocation!.latitude,
+        "longitude": currentLocation!.longitude,
+        "routeName": pao.routeName,
+        "paoName": "${pao.lastName}, ${pao.middleName}",
+        "status": "pending",
+        "timestamp": FieldValue.serverTimestamp(),
+        "isRead": false,
+      });
+
+      // ✅ Start listening for driver's response
+      setState(() {
+        _activePwdRequestId = docRef.id;
+      });
+      _listenToPwdRequestResponse(docRef.id);
+
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "PWD notification sent to ${pao.lastName}, ${pao.middleName}",
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  "Waiting for driver's response...",
+                  style: TextStyle(fontSize: 12),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+            action: SnackBarAction(
+              label: "OK",
+              textColor: Colors.white,
+              onPressed: () {},
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      print("Error sending PWD flag: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Failed to send notification: $e"),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
@@ -406,7 +646,6 @@ class _HomePageState extends State<HomePage> {
                 ),
                 MarkerLayer(
                   markers: [
-                    // ✅ User location marker
                     Marker(
                       point: currentLocation!,
                       width: 60,
@@ -417,11 +656,10 @@ class _HomePageState extends State<HomePage> {
                         color: Color(0xFF2B5F9E),
                       ),
                     ),
-                    // ✅ PAO markers at their ACTUAL locations
                     ..._filteredPaos.where((pao) => pao.lat != null && pao.lng != null).map((pao) {
                       final isNearest = _nearestPao?.id == pao.id;
                       return Marker(
-                        point: LatLng(pao.lat!, pao.lng!), // ✅ Use PAO's real location
+                        point: LatLng(pao.lat!, pao.lng!),
                         width: isNearest ? 70 : 50,
                         height: isNearest ? 70 : 50,
                         child: GestureDetector(
@@ -539,7 +777,6 @@ class _HomePageState extends State<HomePage> {
                                   fontWeight: FontWeight.bold),
                             ),
                             
-                            // ✅ Show nearest jeepney info
                             if (_selectedRoute != null && _nearestPao != null)
                               Padding(
                                 padding: const EdgeInsets.symmetric(
@@ -727,198 +964,193 @@ class _HomePageState extends State<HomePage> {
                                                   setState(() {
                                                     _selectedRoute = route;
                                                     _filteredPaos = [];
-                                                    _nearestPao = null;
-                                                  });
-                                                  _listenToPaosByRoute(
-                                                      route);
-                                                },
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
-                            Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor:
-                                      const Color(0xFF2B5F9E),
-                                  minimumSize:
-                                      const Size(double.infinity, 50),
-                                  disabledBackgroundColor:
-                                      Colors.grey[300],
-                                ),
-                                onPressed: _selectedRoute == null
-                                    ? null
-                                    : () {
-                                        if (_nearestPao != null) {
-                                          _zoomToNearestPao();
-                                        }
-                                        
-                                        ScaffoldMessenger.of(context)
-                                            .showSnackBar(
-                                          SnackBar(
-                                            content: Text(
-                                              "Tracking $_selectedRoute - ${_filteredPaos.length} jeepney(s) available",
-                                            ),
-                                            backgroundColor:
-                                                Colors.green,
-                                          ),
-                                        );
 
-                                        _sheetController.animateTo(
-                                          0.15,
-                                          duration: const Duration(
-                                              milliseconds: 300),
-                                          curve: Curves.easeIn,
-                                        );
-                                      },
-                                child: Text(
-                                  _selectedRoute == null
-                                      ? "Select a Route"
-                                      : "Confirm Route (${_filteredPaos.length} available)",
-                                  style: TextStyle(
-                                    color: _selectedRoute == null
-                                        ? Colors.grey[600]
-                                        : Colors.white,
-                                  ),
-                                ),
+                                                    _nearestPao = null;
+});
+_listenToPaosByRoute(
+route);
+},
+),
+);
+},
+),
+),
+Padding(
+padding: const EdgeInsets.all(12),
+child: ElevatedButton(
+style: ElevatedButton.styleFrom(
+backgroundColor:
+const Color(0xFF2B5F9E),
+minimumSize:
+const Size(double.infinity, 50),
+disabledBackgroundColor:
+Colors.grey[300],
+),
+onPressed: _selectedRoute == null
+? null
+: () {
+if (_nearestPao != null) {
+_zoomToNearestPao();
+}
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          "Tracking $_selectedRoute - ${_filteredPaos.length} jeepney(s) available",
+                                        ),
+                                        backgroundColor:
+                                            Colors.green,
+                                      ),
+                                    );
+
+                                    _sheetController.animateTo(
+                                      0.15,
+                                      duration: const Duration(
+                                          milliseconds: 300),
+                                      curve: Curves.easeIn,
+                                    );
+                                  },
+                            child: Text(
+                              _selectedRoute == null
+                                  ? "Select a Route"
+                                  : "Confirm Route (${_filteredPaos.length} available)",
+                              style: TextStyle(
+                                color: _selectedRoute == null
+                                    ? Colors.grey[600]
+                                    : Colors.white,
                               ),
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-      bottomNavigationBar: BottomNav(currentIndex: 0),
-    );
-  }
-
-  void _showPaoDetails(PaoModel pao) {
-    showModalBottomSheet(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.directions_bus,
-                      size: 32, color: Color(0xFF2B5F9E)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      "${pao.lastName}, ${pao.middleName}",
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      ],
                     ),
                   ),
-                  if (pao.isVerified)
-                    const Icon(Icons.verified, color: Colors.green),
-                ],
+                );
+              },
+            ),
+          );
+        },
+      ),
+    ],
+  ),
+  bottomNavigationBar: BottomNav(currentIndex: 0),
+);
+}
+void _showPaoDetails(PaoModel pao) {
+showModalBottomSheet(
+context: context,
+shape: const RoundedRectangleBorder(
+borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+),
+builder: (context) {
+return Container(
+padding: const EdgeInsets.all(20),
+child: Column(
+mainAxisSize: MainAxisSize.min,
+crossAxisAlignment: CrossAxisAlignment.start,
+children: [
+Row(
+children: [
+const Icon(Icons.directions_bus,
+size: 32, color: Color(0xFF2B5F9E)),
+const SizedBox(width: 12),
+Expanded(
+child: Text(
+"${pao.lastName}, ${pao.middleName}",
+style: const TextStyle(
+fontSize: 20,
+fontWeight: FontWeight.bold,
+),
+),
+),
+if (pao.isVerified)
+const Icon(Icons.verified, color: Colors.green),
+],
+),
+const SizedBox(height: 16),
+_buildInfoRow("Position", pao.position),
+_buildInfoRow("Route", pao.routeName),
+_buildInfoRow("Distance", _getDistanceText(pao)),
+_buildInfoRow(
+"Status", pao.isVerified ? "Verified" : "Unverified"),
+const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                padding: const EdgeInsets.symmetric(vertical: 12),
               ),
-              const SizedBox(height: 16),
-              _buildInfoRow("Position", pao.position),
-              _buildInfoRow("Route", pao.routeName),
-              _buildInfoRow("Distance", _getDistanceText(pao)),
-              _buildInfoRow(
-                  "Status", pao.isVerified ? "Verified" : "Unverified"),
-              const SizedBox(height: 20),
-              
-              // PWD FLAG BUTTON
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  icon: const Icon(Icons.accessible, color: Colors.white),
-                  label: const Text(
-                    "PWD Waiting Here",
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  onPressed: () => _sendPwdFlag(pao),
+              icon: const Icon(Icons.accessible, color: Colors.white),
+              label: const Text(
+                "PWD Waiting Here",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
-              
-              const SizedBox(height: 12),
-              
-              // Track button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF2B5F9E),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    if (pao.lat != null && pao.lng != null) {
-                      _mapController.move(
-                        LatLng(pao.lat!, pao.lng!),
-                        17,
-                      );
-                    }
-                  },
-                  child: const Text(
-                    "Track This Jeepney",
-                    style: TextStyle(color: Colors.white),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(
-            label,
-            style: TextStyle(
-              color: Colors.grey[600],
-              fontWeight: FontWeight.w500,
+              onPressed: () => _sendPwdFlag(pao),
             ),
           ),
-          Text(
-            value,
-            style: const TextStyle(
-              fontWeight: FontWeight.w600,
+          
+          const SizedBox(height: 12),
+          
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2B5F9E),
+                padding: const EdgeInsets.symmetric(vertical: 12),
+              ),
+              onPressed: () {
+                Navigator.pop(context);
+                if (pao.lat != null && pao.lng != null) {
+                  _mapController.move(
+                    LatLng(pao.lat!, pao.lng!),
+                    17,
+                  );
+                }
+              },
+              child: const Text(
+                "Track This Jeepney",
+                style: TextStyle(color: Colors.white),
+              ),
             ),
           ),
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _mapController.dispose();
-    _sheetController.dispose();
-    super.dispose();
-  }
+  },
+);
+}
+Widget _buildInfoRow(String label, String value) {
+return Padding(
+padding: const EdgeInsets.symmetric(vertical: 8),
+child: Row(
+mainAxisAlignment: MainAxisAlignment.spaceBetween,
+children: [
+Text(
+label,
+style: TextStyle(
+color: Colors.grey[600],
+fontWeight: FontWeight.w500,
+),
+),
+Text(
+value,
+style: const TextStyle(
+fontWeight: FontWeight.w600,
+),
+),
+],
+),
+);
+}
+@override
+void dispose() {
+_pwdRequestListener?.cancel();
+_mapController.dispose();
+_sheetController.dispose();
+super.dispose();
+}
 }
