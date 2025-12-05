@@ -219,103 +219,118 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _sendPwdFlag(PaoModel pao) async {
-    if (currentLocation == null) {
+  if (currentLocation == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text("Unable to get your location"),
+        backgroundColor: Colors.red,
+      ),
+    );
+    return;
+  }
+
+  try {
+    User? currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("Unable to get your location"),
+          content: Text("Please login to send notifications"),
           backgroundColor: Colors.red,
         ),
       );
       return;
     }
 
-    try {
-      User? currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Please login to send notifications"),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
+    // ✅ Get passenger details from Firestore
+    DocumentSnapshot userDoc = await FirebaseFirestore.instance
+        .collection("users")
+        .doc(currentUser.uid)
+        .get();
 
-      final confirm = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.accessible, color: Color(0xFF2B5F9E)),
-              SizedBox(width: 8),
-              Text("PWD Notification"),
-            ],
-          ),
-          content: Text(
-            "Send a notification to ${pao.lastName}, ${pao.middleName} that a PWD passenger is waiting at your current location?",
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text("Cancel"),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF2B5F9E),
-              ),
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text(
-                "Send Notification",
-                style: TextStyle(color: Colors.white),
-              ),
-            ),
+    String passengerName = "Unknown";
+    if (userDoc.exists) {
+      Map<String, dynamic>? userData = userDoc.data() as Map<String, dynamic>?;
+      passengerName = "${userData?['firstName'] ?? ''} ${userData?['lastName'] ?? ''}".trim();
+      if (passengerName.isEmpty) passengerName = "Unknown";
+    }
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.accessible, color: Color(0xFF2B5F9E)),
+            SizedBox(width: 8),
+            Text("PWD Notification"),
           ],
         ),
+        content: Text(
+          "Send a notification to ${pao.lastName}, ${pao.middleName} that a PWD passenger is waiting at your current location?",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2B5F9E),
+            ),
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              "Send Notification",
+              style: TextStyle(color: Colors.white),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    // ✅ Create notification with passenger details
+    await FirebaseFirestore.instance.collection("pwd_notifications").add({
+      "paoId": pao.id,
+      "passengerId": currentUser.uid,
+      "passengerName": passengerName, // ✅ Added passenger name
+      "passengerEmail": currentUser.email ?? "Unknown",
+      "latitude": currentLocation!.latitude,
+      "longitude": currentLocation!.longitude,
+      "routeName": pao.routeName,
+      "paoName": "${pao.lastName}, ${pao.middleName}",
+      "status": "pending", // ✅ Can be: pending, accepted, declined
+      "timestamp": FieldValue.serverTimestamp(),
+      "isRead": false,
+    });
+
+    if (mounted) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            "PWD notification sent to ${pao.lastName}, ${pao.middleName}",
+          ),
+          backgroundColor: Colors.green,
+          action: SnackBarAction(
+            label: "OK",
+            textColor: Colors.white,
+            onPressed: () {},
+          ),
+        ),
       );
-
-      if (confirm != true) return;
-
-      await FirebaseFirestore.instance.collection("pwd_notifications").add({
-        "paoId": pao.id,
-        "passengerId": currentUser.uid,
-        "passengerEmail": currentUser.email ?? "Unknown",
-        "latitude": currentLocation!.latitude,
-        "longitude": currentLocation!.longitude,
-        "routeName": pao.routeName,
-        "paoName": "${pao.lastName}, ${pao.middleName}",
-        "status": "pending",
-        "timestamp": FieldValue.serverTimestamp(),
-        "isRead": false,
-      });
-
-      if (mounted) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              "PWD notification sent to ${pao.lastName}, ${pao.middleName}",
-            ),
-            backgroundColor: Colors.green,
-            action: SnackBarAction(
-              label: "OK",
-              textColor: Colors.white,
-              onPressed: () {},
-            ),
-          ),
-        );
-      }
-    } catch (e) {
-      print("Error sending PWD flag: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text("Failed to send notification: $e"),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    }
+  } catch (e) {
+    print("Error sending PWD flag: $e");
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Failed to send notification: $e"),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
