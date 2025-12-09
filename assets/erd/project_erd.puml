@@ -1,0 +1,92 @@
+@startuml
+title FinalSakayAlalay - Database ERD
+
+' --- Entities ---
+entity "users" as users {
+  + uid : string <<PK>>
+  role : string
+  email : string
+  createdAt : timestamp
+}
+
+entity "pwd_users" as pwd_users {
+  + uid : string <<PK>>
+  firstName : string
+  middleName : string
+  lastName : string
+  contactNum : string
+  email : string
+  disabilityType : string
+  userId : string
+  emailVerified : boolean
+  accountStatus : string
+  createdAt : timestamp
+  pwdCardBase64 : text
+  pwdCardUploadedAt : timestamp
+  pwdCardVerified : boolean
+}
+
+entity "pao" as pao {
+  + uid : string <<PK>>
+  firstName : string
+  middleName : string
+  lastName : string
+  contactNum : string
+  email : string
+  paoIdNum : string
+  position : string
+  officeLocCorp : string
+  routeName : string
+  userId : string
+  emailVerified : boolean
+  accountStatus : string
+  createdAt : timestamp
+  paoIdBase64 : text
+  paoIdUploadedAt : timestamp
+  paoIdVerified : boolean
+}
+
+entity "pao_locations" as pao_locations {
+  + paoId : string <<PK>>
+  lat : double
+  lng : double
+  routeName : string
+  heading : double
+  isOnline : boolean
+  timestamp : timestamp
+}
+
+entity "pwd_notifications" as pwd_notifications {
+  + id : string <<PK>>
+  paoId : string
+  passengerId : string
+  passengerName : string
+  passengerEmail : string
+  latitude : double
+  longitude : double
+  routeName : string
+  paoName : string
+  status : string  -- (pending|accepted|declined)
+  timestamp : timestamp
+  isRead : boolean
+  responseMessage : string
+  respondedAt : timestamp
+}
+
+' --- Relationships ---
+users ||--|| pwd_users : "1:1 (uid)"
+users ||--|| pao : "1:1 (uid)"
+pao ||--|| pao_locations : "1:1 (current location)"
+pao ||--o{ pwd_notifications : "1:N (paoId)"
+pwd_users ||--o{ pwd_notifications : "1:N (passengerId)"
+
+note right of pwd_notifications
+  Notifications created by PWD users when
+  flagging/ requesting assistance from a PAO.
+end note
+
+note left of pao_locations
+  Documents keyed by `paoId` (current live location).
+end note
+
+@enduml

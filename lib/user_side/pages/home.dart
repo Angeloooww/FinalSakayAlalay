@@ -506,7 +506,7 @@ void _listenToPwdRequestResponse(String requestId) {
       );
 
       if (confirm != true) return;
-
+      
       // ✅ Create notification and get document reference
       DocumentReference docRef = await FirebaseFirestore.instance
           .collection("pwd_notifications")
