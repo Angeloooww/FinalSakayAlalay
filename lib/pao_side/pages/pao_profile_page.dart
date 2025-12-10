@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:finalsakay/pao_side/navigation/pao_nav_bar.dart';
 import '../../user_side/services/firebase_services.dart';
 import 'package:finalsakay/main.dart';
+import 'pao_edit_profile_screen.dart'; // Add this import
 
 class PaoProfilePage extends StatefulWidget {
   const PaoProfilePage({super.key});
@@ -56,7 +57,7 @@ class _PaoProfilePageState extends State<PaoProfilePage> {
     }
   }
 
-  // ✅ Logout Logic (Same Fix Applied)
+  // ✅ Logout Logic
   Future<void> _handleLogout() async {
     try {
       final shouldLogout = await showDialog<bool>(
@@ -98,6 +99,24 @@ class _PaoProfilePageState extends State<PaoProfilePage> {
           SnackBar(content: Text('Logout failed: $e'), backgroundColor: Colors.red),
         );
       }
+    }
+  }
+
+  // ✅ Navigate to Edit Profile
+  Future<void> _navigateToEditProfile() async {
+    if (paoData == null) return;
+
+    // Navigate to edit profile and wait for result
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PaoEditProfileScreen(paoData: paoData!),
+      ),
+    );
+
+    // If edit was successful, refresh the profile data
+    if (result == true) {
+      await _loadPaoData();
     }
   }
 
@@ -155,6 +174,19 @@ class _PaoProfilePageState extends State<PaoProfilePage> {
 
                               const SizedBox(height: 8),
 
+                              // ✅ Position (if available)
+                              if (paoData!['position'] != null)
+                                Text(
+                                  paoData!['position'],
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.grey[700],
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              if (paoData!['position'] != null)
+                                const SizedBox(height: 4),
+
                               // ✅ Email
                               Text(
                                 paoData!['email'] ?? 'No email',
@@ -163,12 +195,16 @@ class _PaoProfilePageState extends State<PaoProfilePage> {
 
                               const SizedBox(height: 24),
 
-                              // ✅ Edit Profile Button
+                              // ✅ Edit Profile Button - NOW FUNCTIONAL
                               ElevatedButton(
-                                onPressed: () {},
+                                onPressed: _navigateToEditProfile,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF2B5F9E),
                                   foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 32,
+                                    vertical: 12,
+                                  ),
                                 ),
                                 child: const Text('Edit Profile'),
                               ),

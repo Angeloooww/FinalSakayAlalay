@@ -3,6 +3,7 @@ import '../services/firebase_services.dart';
 import '../navigation/nav_bar.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:finalsakay/main.dart';
+import 'edit_profile_screen.dart'; // Add this import
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -58,84 +59,101 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _handleLogout() async {
-  print('🔴 _handleLogout called');
-  
-  try {
-    // Show confirmation dialog
-    final shouldLogout = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        print('🔴 Dialog building');
-        return AlertDialog(
-          title: const Text('Logout'),
-          content: const Text('Are you sure you want to logout?'),
-          actions: [
-            TextButton(
-              onPressed: () {
-                print('🔴 Cancel pressed');
-                Navigator.pop(context, false);
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                print('🔴 Logout confirmed');
-                Navigator.pop(context, true);
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
+    print('🔴 _handleLogout called');
+    
+    try {
+      // Show confirmation dialog
+      final shouldLogout = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) {
+          print('🔴 Dialog building');
+          return AlertDialog(
+            title: const Text('Logout'),
+            content: const Text('Are you sure you want to logout?'),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  print('🔴 Cancel pressed');
+                  Navigator.pop(context, false);
+                },
+                child: const Text('Cancel'),
               ),
-              child: const Text('Logout'),
-            ),
-          ],
+              TextButton(
+                onPressed: () {
+                  print('🔴 Logout confirmed');
+                  Navigator.pop(context, true);
+                },
+                style: TextButton.styleFrom(
+                  foregroundColor: Colors.red,
+                ),
+                child: const Text('Logout'),
+              ),
+            ],
+          );
+        },
+      );
+
+      print('🔴 Dialog result: $shouldLogout');
+
+      if (shouldLogout != true) {
+        print('🔴 Logout cancelled');
+        return;
+      }
+
+      print('🔴 Signing out...');
+      await FirebaseAuth.instance.signOut();
+      print('🔴 Signed out successfully');
+
+      // ✅ Force complete navigation reset
+      if (mounted) {
+        print('🔴 Forcing navigation reset...');
+        
+        // Get the navigator
+        final navigator = Navigator.of(context);
+        
+        // Remove ALL routes
+        navigator.popUntil((route) => false);
+        
+        // Push LoginPage as the new root
+        navigator.push(
+          MaterialPageRoute(
+            builder: (context) => const LoginPage(),
+          ),
         );
-      },
-    );
-
-    print('🔴 Dialog result: $shouldLogout');
-
-    if (shouldLogout != true) {
-      print('🔴 Logout cancelled');
-      return;
-    }
-
-    print('🔴 Signing out...');
-    await FirebaseAuth.instance.signOut();
-    print('🔴 Signed out successfully');
-
-    // ✅ NEW FIX: Force complete navigation reset
-    if (mounted) {
-      print('🔴 Forcing navigation reset...');
-      
-      // Get the navigator
-      final navigator = Navigator.of(context);
-      
-      // Remove ALL routes
-      navigator.popUntil((route) => false);
-      
-      // Push LoginPage as the new root
-      navigator.push(
-        MaterialPageRoute(
-          builder: (context) => const LoginPage(),
-        ),
-      );
-      
-      print('🔴 Navigation complete');
-    }
-  } catch (e, stackTrace) {
-    print('🔴 Error during logout: $e');
-    print('🔴 Stack trace: $stackTrace');
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Logout failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+        
+        print('🔴 Navigation complete');
+      }
+    } catch (e, stackTrace) {
+      print('🔴 Error during logout: $e');
+      print('🔴 Stack trace: $stackTrace');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Logout failed: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
   }
-}
+
+  Future<void> _navigateToEditProfile() async {
+    if (userData == null) return;
+
+    // Navigate to edit profile and wait for result
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => EditProfileScreen(userData: userData!),
+      ),
+    );
+
+    // If edit was successful, refresh the profile data
+    if (result == true) {
+      await _loadUserData();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -145,8 +163,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
         centerTitle: true,
         backgroundColor: const Color(0xFF2B5F9E),
         foregroundColor: Colors.white,
-        actions: [
-        ],
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -210,14 +226,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               ),
                               const SizedBox(height: 24),
                               
-                              // Edit Profile Button
+                              // Edit Profile Button - NOW FUNCTIONAL
                               ElevatedButton(
-                                onPressed: () {
-                                  // Navigate to edit profile
-                                },
+                                onPressed: _navigateToEditProfile,
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: const Color(0xFF2B5F9E),
                                   foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 32,
+                                    vertical: 12,
+                                  ),
                                 ),
                                 child: const Text('Edit Profile'),
                               ),
@@ -261,7 +279,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 title: 'Clear history',
                                 onTap: () {},
                               ),
-                              // ✅ FIXED LOGOUT BUTTON
                               _buildMenuItem(
                                 icon: Icons.logout,
                                 title: 'Logout',

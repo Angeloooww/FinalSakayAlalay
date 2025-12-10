@@ -418,6 +418,8 @@ class FirebaseService {
     }
   }
 
+  
+
   // ============================================
   // UPDATE & DELETE METHODS
   // ============================================
@@ -529,5 +531,7 @@ class FirebaseService {
     } else {
       throw Exception('User role not found');
     }
+
+    
   }
 }
